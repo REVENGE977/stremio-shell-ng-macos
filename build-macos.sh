@@ -65,19 +65,79 @@ mkdir -p "$MACOS_DIR" "$FRAMEWORKS_DIR" "$RESOURCES_DIR"
 cp target/release/stremio-enhanced-ng "$MACOS_DIR/"
 chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 
-# Bundle libmpv dylib into Frameworks and ensure rpaths are present
-for dylib in "$BREW_PREFIX"/lib/libmpv*.dylib; do
-    if [ -e "$dylib" ]; then
-        cp -P "$dylib" "$FRAMEWORKS_DIR/"
-    fi
-done
+# Bundle node executable into Contents/Resources so recipients do not need Node installed
+NODE_BIN="$(command -v node || true)"
+if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]; then
+    echo "==> Bundling standalone Node runtime ($NODE_BIN)..."
+    cp -L "$NODE_BIN" "$RESOURCES_DIR/node"
+    chmod +x "$RESOURCES_DIR/node"
+fi
 
-install_name_tool -add_rpath "$BREW_PREFIX/lib" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
+# Bundle ffmpeg / ffprobe if available
+FFMPEG_BIN="$(command -v ffmpeg || true)"
+if [ -n "$FFMPEG_BIN" ] && [ -x "$FFMPEG_BIN" ]; then
+    echo "==> Bundling ffmpeg ($FFMPEG_BIN)..."
+    cp -L "$FFMPEG_BIN" "$RESOURCES_DIR/ffmpeg"
+    chmod +x "$RESOURCES_DIR/ffmpeg"
+fi
+
+FFPROBE_BIN="$(command -v ffprobe || true)"
+if [ -n "$FFPROBE_BIN" ] && [ -x "$FFPROBE_BIN" ]; then
+    echo "==> Bundling ffprobe ($FFPROBE_BIN)..."
+    cp -L "$FFPROBE_BIN" "$RESOURCES_DIR/ffprobe"
+    chmod +x "$RESOURCES_DIR/ffprobe"
+fi
 
 if [ -f "server.js" ]; then
     cp "server.js" "$RESOURCES_DIR/server.js"
 fi
+
+# Bundle and fix all dynamic libraries using dylibbundler or recursive otool/install_name_tool
+echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
+BUNDLER_CMD="$(command -v dylibbundler || true)"
+for dylib in "$BREW_PREFIX"/lib/libmpv*.dylib; do
+    if [ -e "$dylib" ]; then
+        cp -L "$dylib" "$FRAMEWORKS_DIR/"
+    fi
+done
+
+if [ -n "$BUNDLER_CMD" ] && [ -x "$BUNDLER_CMD" ]; then
+    echo "==> Resolving recursive dylib tree via dylibbundler..."
+    "$BUNDLER_CMD" -b \
+        -x "$MACOS_DIR/stremio-enhanced-ng" \
+        -d "$FRAMEWORKS_DIR" \
+        -p "@executable_path/../Frameworks" \
+        -s "$BREW_PREFIX/lib" \
+        -of || true
+else
+    echo "==> Resolving dependencies recursively using otool/install_name_tool..."
+    bundle_dylibs() {
+        local target="$1"
+        otool -L "$target" | awk 'NR>1 {print $1}' | while read -r dep; do
+            case "$dep" in
+                "$BREW_PREFIX"/*|/usr/local/*|/opt/homebrew/*)
+                    local base
+                    base="$(basename "$dep")"
+                    if [ ! -f "$FRAMEWORKS_DIR/$base" ] && [ -f "$dep" ]; then
+                        cp -L "$dep" "$FRAMEWORKS_DIR/$base"
+                        chmod 755 "$FRAMEWORKS_DIR/$base"
+                        install_name_tool -id "@executable_path/../Frameworks/$base" "$FRAMEWORKS_DIR/$base" 2>/dev/null || true
+                        bundle_dylibs "$FRAMEWORKS_DIR/$base"
+                    fi
+                    install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$target" 2>/dev/null || true
+                    ;;
+            esac
+        done
+    }
+    bundle_dylibs "$MACOS_DIR/stremio-enhanced-ng"
+    for fw in "$FRAMEWORKS_DIR"/*.dylib; do
+        if [ -f "$fw" ]; then
+            bundle_dylibs "$fw"
+        fi
+    done
+fi
+
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
 
 if [ -f "images/stremio.png" ]; then
     cp "images/stremio.png" "$RESOURCES_DIR/icon.png"
