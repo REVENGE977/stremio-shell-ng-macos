@@ -3,12 +3,6 @@ use crate::stremio_app::ipc;
 use crate::stremio_app::RPCResponse;
 use flume::{Receiver, Sender};
 use libmpv2::{events::Event, Format, Mpv, SetData};
-#[cfg(windows)]
-use native_windows_gui::{self as nwg, PartialUi};
-#[cfg(windows)]
-use std::mem;
-#[cfg(windows)]
-use std::ptr;
 use std::{
     collections::VecDeque,
     convert::TryFrom,
@@ -21,31 +15,12 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
-#[cfg(windows)]
-use winapi::shared::{
-    minwindef::{DWORD, UINT},
-    windef::{HMONITOR, HWND},
-    winerror::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
-};
-#[cfg(windows)]
-use winapi::um::{
-    wingdi::{
-        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
-        DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
-        QDC_ONLY_ACTIVE_PATHS,
-    },
-    winnt::LONG,
-    winuser::{
-        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
-    },
-};
 
 use crate::stremio_app::stremio_player::{
     CmdVal, InMsg, InMsgArgs, InMsgFn, PlayerEnded, PlayerEvent, PlayerProprChange, PlayerResponse,
     PropKey, PropVal,
 };
 
-#[cfg(target_os = "macos")]
 pub mod macos_gl {
     use objc::declare::ClassDecl;
     use objc::runtime::{Class, Object, Sel, BOOL, NO, YES};
@@ -635,79 +610,14 @@ fn send_video_ready(rpc_response_sender: &Sender<String>, load_id: u64, ready: b
     }
 }
 
-#[cfg(windows)]
-#[link(name = "user32")]
-extern "system" {
-    fn GetDisplayConfigBufferSizes(
-        flags: UINT,
-        num_path_array_elements: *mut UINT,
-        num_mode_info_array_elements: *mut UINT,
-    ) -> LONG;
-    fn QueryDisplayConfig(
-        flags: UINT,
-        num_path_array_elements: *mut UINT,
-        path_array: *mut DISPLAYCONFIG_PATH_INFO,
-        num_mode_info_array_elements: *mut UINT,
-        mode_info_array: *mut DISPLAYCONFIG_MODE_INFO,
-        current_topology_id: *mut u32,
-    ) -> LONG;
-    fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
-}
-
-#[cfg(windows)]
-const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: u32 = 15;
-#[cfg(windows)]
-const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: u32 = 2;
-
-#[cfg(windows)]
-#[repr(C)]
-struct DisplayconfigGetAdvancedColorInfo2 {
-    header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
-    value: u32,
-    color_encoding: u32,
-    bits_per_color_channel: u32,
-    active_color_mode: u32,
-}
-
-#[cfg(windows)]
-fn with_gpu_next_fallback(vo: String) -> String {
-    let mut outputs = vo
-        .split(',')
-        .filter(|output| !output.is_empty())
-        .map(String::from)
-        .collect::<Vec<String>>();
-
-    let has_gpu_next = outputs.iter().any(|output| output == "gpu-next");
-    let has_gpu = outputs.iter().any(|output| output == "gpu");
-
-    if outputs.is_empty() {
-        outputs.push("gpu-next".to_string());
-        outputs.push("gpu".to_string());
-    } else if has_gpu_next && !has_gpu {
-        outputs.push("gpu".to_string());
-    } else if has_gpu && !has_gpu_next {
-        outputs.push("gpu-next".to_string());
-    }
-
-    format!("{},", outputs.join(","))
-}
-
-#[cfg(not(windows))]
-fn with_gpu_next_fallback(_vo: String) -> String {
-    "libmpv".to_string()
-}
-
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum DisplayOutputMode {
-    Hdr,
-    Sdr,
     Auto,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 struct DisplayOutputState {
     mode: DisplayOutputMode,
-    scale_percent: u32,
 }
 
 #[derive(Default)]
@@ -751,22 +661,6 @@ impl Player {
     }
 }
 
-#[cfg(windows)]
-impl PartialUi for Player {
-    fn build_partial<W: Into<nwg::ControlHandle>>(
-        data: &mut Self,
-        parent: Option<W>,
-    ) -> Result<(), nwg::NwgError> {
-        let window_handle = parent
-            .expect("no parent window")
-            .into()
-            .hwnd()
-            .expect("cannot obtain window handle");
-        data.init(window_handle as i64);
-        Ok(())
-    }
-}
-
 fn create_mpv(window_handle: i64) -> Mpv {
     let mpv = Mpv::with_initializer(|initializer| {
         macro_rules! set_property {
@@ -776,8 +670,6 @@ fn create_mpv(window_handle: i64) -> Mpv {
                     .expect(concat!("failed to set ", $name));
             };
         }
-        #[cfg(windows)]
-        set_property!("wid", window_handle as i64);
         set_property!("title", crate::stremio_app::constants::APP_NAME);
         set_property!("audio-client-name", crate::stremio_app::constants::APP_NAME);
         set_property!("terminal", "yes");
@@ -792,22 +684,8 @@ fn create_mpv(window_handle: i64) -> Mpv {
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=%23%408,429,500,502,503,504,reconnect_delay_max=15"
         );
-        #[cfg(windows)]
-        set_property!("vo", "gpu-next,gpu,");
-        #[cfg(not(windows))]
         set_property!("vo", "libmpv");
 
-        #[cfg(windows)]
-        let mut options = vec![
-            ("gpu-context", "d3d11"),
-            ("d3d11-output-format", "auto"),
-            ("d3d11-output-csp", "auto"),
-            ("target-colorspace-hint", "auto"),
-            ("target-colorspace-hint-mode", "target"),
-            ("tone-mapping", "bt.2390"),
-            ("dither-depth", "auto"),
-        ];
-        #[cfg(not(windows))]
         let mut options = vec![
             ("target-colorspace-hint", "auto"),
             ("target-colorspace-hint-mode", "target"),
@@ -833,7 +711,6 @@ fn create_mpv(window_handle: i64) -> Mpv {
     })
     .expect("cannot build MPV");
 
-    #[cfg(target_os = "macos")]
     macos_gl::attach_mpv_handle(mpv.ctx.as_ptr(), window_handle);
 
     mpv
@@ -848,9 +725,6 @@ fn create_display_output_thread(
         let mut last_state = None;
 
         loop {
-            #[cfg(windows)]
-            let state = current_display_output_state(&mpv, window_handle as HWND);
-            #[cfg(not(windows))]
             let state = current_display_output_state(&mpv, window_handle);
             let gpu = gpu_video_processing.load(Ordering::Relaxed);
             if last_state != Some((state, gpu)) {
@@ -862,110 +736,12 @@ fn create_display_output_thread(
     })
 }
 
-#[cfg(windows)]
-fn current_display_output_state(mpv: &Mpv, window_handle: HWND) -> DisplayOutputState {
-    DisplayOutputState {
-        mode: current_display_output_mode(window_handle),
-        scale_percent: current_video_filter_scale(mpv, window_handle),
-    }
-}
-
-#[cfg(windows)]
-fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
-    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
-    match monitor_hdr_active(monitor) {
-        Some(true) => DisplayOutputMode::Hdr,
-        Some(false) => DisplayOutputMode::Sdr,
-        None => DisplayOutputMode::Auto,
-    }
-}
-
-#[cfg(windows)]
-fn current_video_filter_scale(mpv: &Mpv, window_handle: HWND) -> u32 {
-    let Some(video_height) = current_video_height(mpv) else {
-        return 100;
-    };
-    let Some(display_height) = current_monitor_height(window_handle) else {
-        return 100;
-    };
-    if video_height <= 0.0 || display_height <= video_height {
-        return 100;
-    }
-
-    ((display_height / video_height).min(4.0) * 100.0).round() as u32
-}
-
-#[cfg(windows)]
-fn current_video_height(mpv: &Mpv) -> Option<f64> {
-    let video_params = mpv.get_property::<String>("video-params").ok()?;
-    let video_params = serde_json::from_str::<serde_json::Value>(&video_params).ok()?;
-    video_params.get("h").and_then(serde_json::Value::as_f64)
-}
-
-#[cfg(windows)]
-fn current_monitor_height(window_handle: HWND) -> Option<f64> {
-    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
-    if monitor.is_null() {
-        return None;
-    }
-
-    let mut monitor_info: MONITORINFO = unsafe { mem::zeroed() };
-    monitor_info.cbSize = mem::size_of::<MONITORINFO>() as DWORD;
-    if unsafe { GetMonitorInfoW(monitor, &mut monitor_info) } == 0 {
-        return None;
-    }
-
-    Some((monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top) as f64)
-}
-
-#[cfg(windows)]
-fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, gpu_video_processing: bool) {
-    // Target colorspace follows the display so native HDR still passes through; the RTX
-    // HDR filter is the opt-in part and only makes sense on an HDR display.
-    let vf = if gpu_video_processing {
-        let scale = state.scale_percent as f64 / 100.0;
-        let mut vf = format!("d3d11vpp=scaling-mode=nvidia:scale={scale:.2}");
-        if state.mode == DisplayOutputMode::Hdr {
-            vf.push_str(":format=x2bgr10:nvidia-true-hdr");
-        }
-        vf
-    } else {
-        String::new()
-    };
-    let color = match state.mode {
-        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
-            ("d3d11-output-csp", "auto"),
-            ("target-colorspace-hint", "auto"),
-            ("target-trc", "auto"),
-            ("target-prim", "auto"),
-        ],
-        DisplayOutputMode::Sdr => [
-            ("d3d11-output-csp", "srgb"),
-            ("target-colorspace-hint", "yes"),
-            ("target-trc", "auto"),
-            ("target-prim", "bt.709"),
-        ],
-    };
-
-    for (name, value) in std::iter::once(("vf", vf.as_str())).chain(color) {
-        if let Err(error) = mpv.set_property(name, value) {
-            eprintln!("mpv: cannot set {name}={value}: {error:?}");
-        }
-    }
-}
-
-#[cfg(not(windows))]
 fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, _gpu_video_processing: bool) {
     let color = match state.mode {
-        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
+        DisplayOutputMode::Auto => [
             ("target-colorspace-hint", "auto"),
             ("target-trc", "auto"),
             ("target-prim", "auto"),
-        ],
-        DisplayOutputMode::Sdr => [
-            ("target-colorspace-hint", "yes"),
-            ("target-trc", "auto"),
-            ("target-prim", "bt.709"),
         ],
     };
 
@@ -973,116 +749,6 @@ fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, _gpu_video_pr
         if let Err(error) = mpv.set_property(name, value) {
             eprintln!("mpv: cannot set {name}={value}: {error:?}");
         }
-    }
-}
-
-#[cfg(windows)]
-fn monitor_hdr_active(monitor: HMONITOR) -> Option<bool> {
-    if monitor.is_null() {
-        return None;
-    }
-
-    let device_name = monitor_device_name(monitor)?;
-    for path in active_display_paths()? {
-        let Some(source_name) = display_source_name(&path) else {
-            continue;
-        };
-        if source_name.viewGdiDeviceName != device_name {
-            continue;
-        }
-
-        return display_hdr_active(&path);
-    }
-
-    None
-}
-
-#[cfg(windows)]
-fn monitor_device_name(monitor: HMONITOR) -> Option<[u16; 32]> {
-    let mut monitor_info: MONITORINFOEXW = unsafe { mem::zeroed() };
-    monitor_info.cbSize = mem::size_of::<MONITORINFOEXW>() as DWORD;
-
-    let result =
-        unsafe { GetMonitorInfoW(monitor, &mut monitor_info as *mut _ as *mut MONITORINFO) };
-    if result == 0 {
-        None
-    } else {
-        Some(monitor_info.szDevice)
-    }
-}
-
-#[cfg(windows)]
-fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
-    for _ in 0..3 {
-        let mut path_count = 0;
-        let mut mode_count = 0;
-        let buffer_status = unsafe {
-            GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
-        };
-        if buffer_status != ERROR_SUCCESS as LONG {
-            return None;
-        }
-
-        let mut paths =
-            vec![unsafe { mem::zeroed::<DISPLAYCONFIG_PATH_INFO>() }; path_count as usize];
-        let mut modes =
-            vec![unsafe { mem::zeroed::<DISPLAYCONFIG_MODE_INFO>() }; mode_count as usize];
-        let query_status = unsafe {
-            QueryDisplayConfig(
-                QDC_ONLY_ACTIVE_PATHS,
-                &mut path_count,
-                paths.as_mut_ptr(),
-                &mut mode_count,
-                modes.as_mut_ptr(),
-                ptr::null_mut(),
-            )
-        };
-
-        if query_status == ERROR_SUCCESS as LONG {
-            paths.truncate(path_count as usize);
-            return Some(paths);
-        }
-        if query_status != ERROR_INSUFFICIENT_BUFFER as LONG {
-            return None;
-        }
-    }
-
-    None
-}
-
-#[cfg(windows)]
-fn display_source_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<DISPLAYCONFIG_SOURCE_DEVICE_NAME> {
-    let mut source_name: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { mem::zeroed() };
-    source_name.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
-        _type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
-        size: mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32,
-        adapterId: path.sourceInfo.adapterId,
-        id: path.sourceInfo.id,
-    };
-
-    let status = unsafe { DisplayConfigGetDeviceInfo(&mut source_name.header) };
-    if status == ERROR_SUCCESS as LONG {
-        Some(source_name)
-    } else {
-        None
-    }
-}
-
-#[cfg(windows)]
-fn display_hdr_active(path: &DISPLAYCONFIG_PATH_INFO) -> Option<bool> {
-    let mut color_info: DisplayconfigGetAdvancedColorInfo2 = unsafe { mem::zeroed() };
-    color_info.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
-        _type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
-        size: mem::size_of::<DisplayconfigGetAdvancedColorInfo2>() as u32,
-        adapterId: path.targetInfo.adapterId,
-        id: path.targetInfo.id,
-    };
-
-    let status = unsafe { DisplayConfigGetDeviceInfo(&mut color_info.header) };
-    if status == ERROR_SUCCESS as LONG {
-        Some(color_info.active_color_mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR)
-    } else {
-        None
     }
 }
 
@@ -1278,26 +944,11 @@ fn create_message_thread(
                 }
                 InMsg(InMsgFn::MpvSetProp, InMsgArgs::StProp(name, PropVal::Str(value))) => {
                     let is_vo = name.to_string() == "vo";
-                    #[cfg(windows)]
-                    {
-                        let value = if is_vo {
-                            with_gpu_next_fallback(value)
-                        } else {
-                            value
-                        };
+                    if !is_vo {
                         set_property(name, value, &mpv);
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        if !is_vo {
-                            set_property(name, value, &mpv);
-                        }
                     }
                     // vo reinit reverts color props to defaults; re-assert for the current display.
                     if is_vo {
-                        #[cfg(windows)]
-                        let state = current_display_output_state(&mpv, window_handle as HWND);
-                        #[cfg(not(windows))]
                         let state = current_display_output_state(&mpv, window_handle);
                         apply_display_output_mode(
                             &mpv,
@@ -1308,9 +959,6 @@ fn create_message_thread(
                 }
                 InMsg(InMsgFn::MpvSetGpuVideoProcessing, InMsgArgs::Flag(enabled)) => {
                     gpu_video_processing.store(enabled, Ordering::Relaxed);
-                    #[cfg(windows)]
-                    let state = current_display_output_state(&mpv, window_handle as HWND);
-                    #[cfg(not(windows))]
                     let state = current_display_output_state(&mpv, window_handle);
                     apply_display_output_mode(&mpv, state, enabled);
                 }
@@ -1325,11 +973,9 @@ fn create_message_thread(
     })
 }
 
-#[cfg(not(windows))]
 fn current_display_output_state(_mpv: &Mpv, _window_handle: isize) -> DisplayOutputState {
     DisplayOutputState {
         mode: DisplayOutputMode::Auto,
-        scale_percent: 100,
     }
 }
 

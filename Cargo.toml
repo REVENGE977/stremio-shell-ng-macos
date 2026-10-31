@@ -15,7 +15,6 @@ serde_json = "1.0"
 clap = { version = "4", features = ["derive", "unicode"] }
 open = "5"
 urlencoding = "2"
-bitflags = "2"
 parse-display = "0.9"
 flume = "0.11"
 whoami = "1.5"
@@ -27,48 +26,10 @@ rand = "0.8"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1.19", features = ["v4"] }
 dirs = "6"
-
-[target.'cfg(windows)'.dependencies]
-zip-extract = "0.4"
-native-windows-gui = { git = "https://github.com/Stremio/native-windows-gui", features = [
-    "high-dpi",
-    "notice",
-    "tray-notification",
-    "menu",
-] }
-native-windows-derive = "1"
-winapi = { version = "0.3.9", features = [
-    "d3d11",
-    "d3dcommon",
-    "dwmapi",
-    "dxgi",
-    "dxgiformat",
-    "dxgitype",
-    "libloaderapi",
-    "handleapi",
-    "jobapi2",
-    "wincon",
-    "winuser",
-    "wingdi",
-    "namedpipeapi",
-] }
-webview2 = "0.1.4"
-webview2-sys = "0.1.1"
-winreg = "0.52"
-
-[target.'cfg(target_os = "macos")'.dependencies]
 tao = "0.30"
 wry = { version = "0.47", features = ["transparent", "fullscreen", "devtools"] }
-cocoa = "0.26"
 objc = "0.2"
 libc = "0.2"
-
-[build-dependencies]
-chrono = "0.4.22"
-
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
-zip-extract = "0.4"
 
 [dev-dependencies]
 serde_test = "1.0.*"

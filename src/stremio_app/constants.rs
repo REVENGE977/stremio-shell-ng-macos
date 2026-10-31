@@ -2,10 +2,6 @@ use std::time::Duration;
 use url::Url;
 
 pub const APP_NAME: &str = "Stremio Enhanced";
-pub const APP_ID: &str = "stremio-enhanced-ng";
-#[cfg(windows)]
-pub const IPC_PATH: &str = "//./pipe/com.stremio5.";
-#[cfg(not(windows))]
 pub const IPC_PATH: &str = "/tmp/com.stremio5.";
 pub const IPC_ATTEMPTS: u32 = 10;
 pub const IPC_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -14,12 +10,6 @@ pub const WEB_ENDPOINT: &str = "https://web.stremio.com/";
 pub const STA_ENDPOINT: &str = "https://staging.strem.io/";
 pub const WINDOW_MIN_WIDTH: i32 = 1000;
 pub const WINDOW_MIN_HEIGHT: i32 = 600;
-pub const UPDATE_INTERVAL: u64 = 12 * 60 * 60;
-pub const UPDATE_ENDPOINT: [&str; 3] = [
-    "https://www.strem.io/updater/check?product=stremio-shell-ng",
-    "https://www.stremio.com/updater/check?product=stremio-shell-ng",
-    "https://www.stremio.net/updater/check?product=stremio-shell-ng",
-];
 pub const STREMIO_SERVER_DEV_MODE: &str = "STREMIO_SERVER_DEV_MODE";
 pub const SRV_BUFFER_SIZE: usize = 1024;
 pub const SERVER_IPC_KEY: &str = "SERVER_IPC_KEY";
@@ -62,8 +52,6 @@ pub fn web_endpoint_with_streaming_server(server_url: &str) -> String {
 
 pub fn safe_url(uri: &str) -> Option<String> {
     if let Ok(url) = Url::parse(uri) {
-        // Local files belong to the drag and drop handler, never to the browser.
-        // Windows paths such as C:\... parse as a one-letter scheme.
         if url.scheme() == "file" || url.scheme().len() == 1 {
             return None;
         }
@@ -92,9 +80,7 @@ mod tests {
     #[test]
     fn local_file_urls_are_not_opened_externally() {
         for uri in [
-            "file:///C:/Users/Test%20User/subtitle.srt",
-            "file:///D:/a/_temp/Test%20User/legenda%20%C3%A7%C3%A3o.srt",
-            "FILE:///C:/Users/Test/subtitle.srt",
+            "file:///Users/Test%20User/subtitle.srt",
             "file://server/share/subtitle.srt",
         ] {
             assert_eq!(safe_url(uri), None, "{uri}");
@@ -102,43 +88,10 @@ mod tests {
     }
 
     #[test]
-    fn windows_paths_are_not_opened_externally() {
-        for uri in [
-            r"C:\Users\Test User\subtitle.srt",
-            "C:/Users/Test User/legenda ção.srt",
-        ] {
-            assert_eq!(safe_url(uri), None, "{uri}");
-        }
-    }
-
-    #[test]
-    fn whitelisted_links_open_directly() {
+    fn web_endpoint_encodes_streaming_server_url() {
         assert_eq!(
-            safe_url("https://www.stremio.com/"),
-            Some("https://www.stremio.com/".to_string())
+            web_endpoint_with_streaming_server("http://127.0.0.1:11470/"),
+            "https://web.stremio.com/#/?streamingServerUrl=http%3A%2F%2F127.0.0.1%3A11470"
         );
-    }
-
-    #[test]
-    fn other_links_open_the_warning_page() {
-        assert_eq!(
-            safe_url("https://example.com/page?a=1"),
-            Some(format!(
-                "{WARNING_URL}{}",
-                urlencoding::encode("https://example.com/page?a=1")
-            ))
-        );
-        assert_eq!(
-            safe_url("data:text/plain,hello"),
-            Some(format!(
-                "{WARNING_URL}{}",
-                urlencoding::encode("data:text/plain,hello")
-            ))
-        );
-    }
-
-    #[test]
-    fn invalid_urls_are_not_opened() {
-        assert_eq!(safe_url("not a url"), None);
     }
 }

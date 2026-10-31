@@ -187,7 +187,7 @@ pub fn base_dir() -> PathBuf {
         return cfg.join("stremio-enhanced");
     }
     if let Some(home) = dirs::home_dir() {
-        return home.join("AppData").join("Roaming").join("stremio-enhanced");
+        return home.join("Library").join("Application Support").join("stremio-enhanced");
     }
     PathBuf::from("stremio-enhanced")
 }
@@ -638,7 +638,7 @@ pub fn open_folder(path: &Path) {
     }
     if let Err(e) = open::that(path) {
         eprintln!("[Enhanced] Failed to open folder via open::that: {e}, attempting explorer fallback");
-        let _ = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "explorer" }).arg(path).spawn();
+        let _ = std::process::Command::new("open").arg(path).spawn();
     }
 }
 

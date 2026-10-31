@@ -284,17 +284,37 @@ pub fn run_macos(
 
     // Now attach our CAOpenGLLayer-backed mpv_view into WryWebViewParent directly BELOW WryWebView!
     let mpv_layer_ptr: i64 = unsafe {
-        use cocoa::base::id;
-        use cocoa::foundation::NSRect;
+        use objc::runtime::Object;
         use objc::{class, msg_send, sel, sel_impl};
 
-        let ns_window: id = window.ns_window() as id;
-        let content_view: id = msg_send![ns_window, contentView];
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct NSPoint {
+            x: f64,
+            y: f64,
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct NSSize {
+            width: f64,
+            height: f64,
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct NSRect {
+            origin: NSPoint,
+            size: NSSize,
+        }
+
+        let ns_window = window.ns_window() as *mut Object;
+        let content_view: *mut Object = msg_send![ns_window, contentView];
         let _: () = msg_send![content_view, setWantsLayer: true];
         let bounds: NSRect = msg_send![content_view, bounds];
 
-        let mpv_view: id = msg_send![class!(NSView), alloc];
-        let mpv_view: id = msg_send![mpv_view, initWithFrame: bounds];
+        let mpv_view: *mut Object = msg_send![class!(NSView), alloc];
+        let mpv_view: *mut Object = msg_send![mpv_view, initWithFrame: bounds];
         let scale_factor = window.scale_factor();
         let gl_layer = macos_gl::create_mpv_opengl_layer(scale_factor);
         let _: () = msg_send![mpv_view, setLayer: gl_layer];
@@ -303,7 +323,7 @@ pub fn run_macos(
         let _: () = msg_send![mpv_view, setAutoresizingMask: 18u64];
 
         // Position mpv_view at the bottom of WryWebViewParent (NSWindowBelow = -1)
-        let nil_view: id = std::ptr::null_mut();
+        let nil_view: *mut Object = std::ptr::null_mut();
         let _: () =
             msg_send![content_view, addSubview: mpv_view positioned: -1isize relativeTo: nil_view];
         println!(
@@ -609,33 +629,52 @@ pub fn run_macos(
                         if let Some(request) = msg.get_params().and_then(|params| {
                             serde_json::from_value::<CacheDirectoryRequest>(params.clone()).ok()
                         }) {
-                            let out_tx = web_out_rpc.clone();
-                            thread::spawn(move || {
-                                let output = Command::new("osascript")
-                                    .args([
-                                        "-e",
-                                        "POSIX path of (choose folder with prompt \"Select Stremio Cache Folder\")",
-                                    ])
-                                    .output();
-                                let res = match output {
-                                    Ok(o) if o.status.success() => {
-                                        let path =
-                                            String::from_utf8_lossy(&o.stdout).trim().to_string();
-                                        if path.is_empty() {
-                                            Ok(None)
-                                        } else {
-                                            Ok(Some(path))
-                                        }
-                                    }
-                                    _ => Ok(None),
-                                };
-                                out_tx
+                            if local_server.as_deref() != Some(request.server_url.as_str()) {
+                                web_out_rpc
                                     .send(RPCResponse::cache_directory_selected(
                                         request.request_id,
-                                        res,
+                                        Err(
+                                            "The folder picker is only available for the shell's local server"
+                                                .to_owned(),
+                                        ),
                                     ))
                                     .ok();
-                            });
+                            } else {
+                                let out_tx = web_out_rpc.clone();
+                                let default_dir = request.directory.clone();
+                                thread::spawn(move || {
+                                    let script = match default_dir
+                                        .filter(|d| std::path::Path::new(d).is_dir())
+                                    {
+                                        Some(dir) => format!(
+                                            "POSIX path of (choose folder with prompt \"Select Stremio Cache Folder\" default location (POSIX file {:?}))",
+                                            dir
+                                        ),
+                                        None => "POSIX path of (choose folder with prompt \"Select Stremio Cache Folder\")".to_string(),
+                                    };
+                                    let output =
+                                        Command::new("osascript").args(["-e", &script]).output();
+                                    let res = match output {
+                                        Ok(o) if o.status.success() => {
+                                            let path = String::from_utf8_lossy(&o.stdout)
+                                                .trim()
+                                                .to_string();
+                                            if path.is_empty() {
+                                                Ok(None)
+                                            } else {
+                                                Ok(Some(path))
+                                            }
+                                        }
+                                        _ => Ok(None),
+                                    };
+                                    out_tx
+                                        .send(RPCResponse::cache_directory_selected(
+                                            request.request_id,
+                                            res,
+                                        ))
+                                        .ok();
+                                });
+                            }
                         }
                     }
                     Some("win-set-interface-scale") => {
@@ -737,6 +776,9 @@ pub fn run_macos(
                     }
                 }
                 UserEvent::Navigate(url) => {
+                    open_sender
+                        .send(crate::stremio_app::open_media::OpenRequest::Reset)
+                        .ok();
                     let same_base =
                         current_endpoint.split('#').next() == url.split('#').next();
                     current_endpoint = url.clone();
@@ -774,6 +816,9 @@ pub fn run_macos(
                             ServerEvent::Ready(endpoint) => {
                                 println!("[macOS Shell] Streaming server ready at {endpoint}");
                                 *local_server_url.lock().unwrap() = Some(endpoint.clone());
+                                open_sender
+                                    .send(crate::stremio_app::open_media::OpenRequest::Reset)
+                                    .ok();
                                 let target_url = if webui_url_base.trim_end_matches('/')
                                     == WEB_ENDPOINT.trim_end_matches('/')
                                 {

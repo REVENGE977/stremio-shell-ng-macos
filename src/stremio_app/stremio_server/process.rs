@@ -119,16 +119,6 @@ fn run_server(
         .spawn()
         .map_err(|error| format!("Cannot execute stremio-runtime: {error}"))?;
 
-    #[cfg(windows)]
-    let job = match super::job::ChildJob::assign(&child) {
-        Ok(job) => job,
-        Err(error) => {
-            child.kill().ok();
-            child.wait().ok();
-            return Err(format!("Cannot supervise stremio-runtime: {error}"));
-        }
-    };
-
     let stdout = child.stdout.take().expect("Piped server stdout");
     let stderr = child.stderr.take().expect("Piped server stderr");
     let stdout_sender = sender.clone();
@@ -179,8 +169,6 @@ fn run_server(
     };
 
     // Finish cleanup before reporting failure, so Retry cannot overlap two servers.
-    #[cfg(windows)]
-    drop(job);
     child.kill().ok();
     child.wait().ok();
     stdout_thread.join().ok();
@@ -263,18 +251,7 @@ mod tests {
     "#;
 
     fn runtime() -> PathBuf {
-        if cfg!(windows) {
-            let directory = if cfg!(target_arch = "aarch64") {
-                "bin-arm64"
-            } else {
-                "bin"
-            };
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join(directory)
-                .join("stremio-runtime.exe")
-        } else {
-            PathBuf::from("node")
-        }
+        PathBuf::from("node")
     }
 
     fn script_command(script: &str) -> Command {
@@ -318,7 +295,7 @@ mod tests {
     #[test]
     fn reports_spawn_failure() {
         let process = ServerProcess::new(
-            || Ok(Command::new(runtime().join("missing-runtime.exe"))),
+            || Ok(Command::new(runtime().join("missing-runtime"))),
             TEST_TIMEOUT,
             || {},
         );
@@ -432,23 +409,6 @@ mod tests {
         let process = start_script(HTTP_SERVER, TEST_TIMEOUT);
         let endpoint = ready(&process);
         drop(process);
-        assert_port_released(&endpoint);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn parent_exit_cleans_up_descendants_with_inherited_output() {
-        let script = format!(
-            r#"
-            require('child_process').spawn(process.execPath, ['-e', {}], {{ stdio: 'inherit' }});
-            setTimeout(() => process.exit(7), 1000);
-        "#,
-            serde_json::to_string(HTTP_SERVER).unwrap()
-        );
-        let process = ServerProcess::new(move || Ok(script_command(&script)), TEST_TIMEOUT, || {});
-        process.start();
-        let endpoint = ready(&process);
-        assert!(failed(&process).contains("exited"));
         assert_port_released(&endpoint);
     }
 }

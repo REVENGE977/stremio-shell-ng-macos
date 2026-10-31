@@ -1,24 +1,17 @@
-#![cfg_attr(all(not(test), not(debug_assertions)), windows_subsystem = "windows")]
 #![allow(unexpected_cfgs)]
-#[cfg(windows)]
-#[macro_use]
-extern crate bitflags;
-#[cfg(windows)]
-use std::cell::RefCell;
+
 use std::{path::Path, process::exit};
 use url::Url;
 use whoami::username;
 
 use clap::Parser;
-#[cfg(windows)]
-use native_windows_gui::{self as nwg, NativeUi};
 
 mod stremio_app;
 use crate::stremio_app::{
     acquire_single_instance,
     constants::{
-        DEV_ENDPOINT, IPC_ATTEMPTS, IPC_PATH, IPC_RETRY_DELAY, SERVER_IPC_KEY, STA_ENDPOINT,
-        STREMIO_SERVER_DEV_MODE, WEB_ENDPOINT,
+        IPC_ATTEMPTS, IPC_PATH, IPC_RETRY_DELAY, SERVER_IPC_KEY, STREMIO_SERVER_DEV_MODE,
+        WEB_ENDPOINT,
     },
     SingleInstance,
 };
@@ -45,7 +38,7 @@ pub struct Opt {
     pub staging: bool,
     #[clap(long, default_value = WEB_ENDPOINT, help = "Override the WebUI URL")]
     pub webui_url: String,
-    #[clap(long, help = "Ovveride autoupdater endpoint")]
+    #[clap(long, help = "Override autoupdater endpoint")]
     pub autoupdater_endpoint: Option<Url>,
     #[clap(long, help = "Forces reinstalling current version")]
     pub force_update: bool,
@@ -54,29 +47,12 @@ pub struct Opt {
     #[clap(
         long,
         default_value = "",
-        help = "Secret key for communication with the server. By default it is randomly generrated on startup"
+        help = "Secret key for communication with the server. By default it is randomly generated on startup"
     )]
     pub server_ipc_key: String,
 }
 
 fn main() {
-    #[cfg(windows)]
-    unsafe {
-        use std::os::windows::ffi::OsStrExt;
-        let app_id_wide: Vec<u16> = std::ffi::OsStr::new(crate::stremio_app::constants::APP_ID)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
-        #[link(name = "shell32")]
-        extern "system" {
-            fn SetCurrentProcessExplicitAppUserModelID(AppID: *const u16) -> i32;
-        }
-        let _ = SetCurrentProcessExplicitAppUserModelID(app_id_wide.as_ptr());
-    }
-
-    #[cfg(windows)]
-    nwg::enable_visual_styles();
-
     // Ensure streaming server and enhanced directories exist at startup
     let _ = stremio_app::stremio_server::server_dir();
 
@@ -98,9 +74,8 @@ fn main() {
         .map(stremio_app::open_media::normalize)
         .unwrap_or_default();
 
-    // Single application IPC
+    // Single application IPC over Unix domain socket
     let mut commands_path = IPC_PATH.to_string();
-    // Append the username so it works per User
     commands_path.push_str(&username());
     let socket_path = Path::new(&commands_path);
     let commands_server = match acquire_single_instance(
@@ -116,46 +91,14 @@ fn main() {
             None
         }
     };
-    // END IPC
 
     std::env::set_var(
         STREMIO_SERVER_DEV_MODE,
         if opt.development { "true" } else { "false" },
     );
 
-    #[cfg(windows)]
-    {
-        use crate::stremio_app::MainWindow;
-
-        let webui_url = if opt.development && opt.webui_url == WEB_ENDPOINT {
-            DEV_ENDPOINT.to_string()
-        } else if opt.staging && opt.webui_url == WEB_ENDPOINT {
-            STA_ENDPOINT.to_string()
-        } else {
-            opt.webui_url
-        };
-
-        nwg::init().expect("Failed to init Native Windows GUI");
-        let _app = MainWindow::build_ui(MainWindow {
-            command,
-            commands_server: RefCell::new(commands_server),
-            webui_url,
-            no_splash: opt.no_splash,
-            dev_tools: opt.development || opt.dev_tools,
-            start_hidden: opt.start_hidden,
-            autoupdater_endpoint: opt.autoupdater_endpoint,
-            force_update: opt.force_update,
-            release_candidate: opt.release_candidate,
-            ..Default::default()
-        })
-        .expect("Failed to build UI");
-        nwg::dispatch_thread_events();
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(e) = stremio_app::run_macos(opt, commands_server) {
-            eprintln!("[macOS Shell] Application terminated with error: {e}");
-        }
+    if let Err(err) = crate::stremio_app::run_macos(opt, commands_server) {
+        eprintln!("macOS runtime error: {err}");
+        exit(1);
     }
 }
