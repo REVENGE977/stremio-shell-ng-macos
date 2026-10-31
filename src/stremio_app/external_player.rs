@@ -1,6 +1,6 @@
-use std::{
-    env, fs,  path::PathBuf, process::Command,
-};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+use std::{env, fs, path::PathBuf, process::Command};
 #[cfg(windows)]
 use winapi::um::winbase::CREATE_BREAKAWAY_FROM_JOB;
 
@@ -14,9 +14,11 @@ use winreg::{
     RegKey,
 };
 
+#[cfg(windows)]
 use crate::stremio_app::constants::APP_NAME;
 
 const M3U_DATA_URI_PREFIX: &str = "data:application/octet-stream;charset=utf-8;base64,";
+#[cfg(windows)]
 const APP_PATHS: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths";
 
 #[derive(Debug, PartialEq)]
@@ -93,6 +95,7 @@ fn spawn_player(name: &str, exe: &str, install_path: &str, url: &Url) -> Result<
     Ok(())
 }
 
+#[cfg(windows)]
 fn player_paths(exe: &str, install_path: &str) -> Vec<PathBuf> {
     let app_paths = [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
         .iter()
@@ -136,6 +139,50 @@ fn open_playlist(url: &Url) -> Result<(), &'static str> {
     fs::write(&path, format!("#EXTM3U\n#EXTINF:0\n{url}"))
         .map_err(|_| "cannot save M3U playlist")?;
     open::that(&path).map_err(|_| "cannot open M3U playlist")
+}
+
+#[cfg(not(windows))]
+fn spawn_player(
+    name: &str,
+    _exe: &str,
+    _install_path: &str,
+    url: &Url,
+) -> Result<(), &'static str> {
+    let mac_candidates = [
+        "/Applications/VLC.app/Contents/MacOS/VLC",
+        "/Applications/MacPorts/VLC.app/Contents/MacOS/VLC",
+        "/opt/local/bin/vlc",
+        "/opt/homebrew/bin/vlc",
+        "/usr/local/bin/vlc",
+        "vlc",
+    ];
+    for candidate in mac_candidates {
+        if Command::new(candidate)
+            .arg("--")
+            .arg(url.as_str())
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
+    let status = Command::new("open")
+        .args(["-a", "VLC", url.as_str()])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => {
+            let fallback = Command::new("open").arg(url.as_str()).status();
+            if fallback.is_ok_and(|s| s.success()) {
+                Ok(())
+            } else {
+                eprintln!("{name} was not found on this computer.");
+                Err("external player is not installed")
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -196,29 +243,6 @@ mod tests {
             "data:application/octet-stream;charset=utf-8;base64,not base64",
         ] {
             assert!(parse(input).is_err(), "{}", input);
-        }
-    }
-}
-
-
-#[cfg(not(windows))]
-fn spawn_player(name: &str, _exe: &str, _install_path: &str, url: &Url) -> Result<(), &'static str> {
-    let status = std::process::Command::new("open")
-        .args(["-a", "VLC", url.as_str()])
-        .status();
-
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        _ => {
-            let fallback = std::process::Command::new("open")
-                .arg(url.as_str())
-                .status();
-            if fallback.is_ok_and(|s| s.success()) {
-                Ok(())
-            } else {
-                eprintln!("{name} was not found on this computer.");
-                Err("external player is not installed")
-            }
         }
     }
 }

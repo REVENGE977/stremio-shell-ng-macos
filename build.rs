@@ -1,40 +1,32 @@
-use chrono::{Datelike, Local};
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
-
-#[cfg(windows)]
-extern crate winres;
 
 fn main() {
     setup_enhanced();
 
     let target = env::var("TARGET").unwrap_or_default();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    #[cfg(windows)]
-    if target.contains("windows") {
-        setup_windows_resources(&target);
-    }
-
-    if target.contains("apple-darwin") {
-        let arch = if target.starts_with("aarch64") {
-            "arm64"
-        } else {
-            "x64"
-        };
-        println!("cargo:rustc-env=ARCH={}", arch);
-        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
-        println!("cargo:rustc-link-search=native=/usr/local/lib");
-        println!("cargo:rustc-link-lib=dylib=mpv");
+    if target_os == "windows" {
+        #[cfg(windows)]
+        setup_windows(&target);
+    } else if target_os == "macos" {
+        setup_macos(&target);
+    } else {
+        panic!("Unsupported target: {}", target);
     }
 }
 
 #[cfg(windows)]
-fn setup_windows_resources(target: &str) {
+fn setup_windows(target: &str) {
+    use chrono::{Datelike, Local};
+    use std::io::Cursor;
+
     let now = Local::now();
-    let copyright = format!("Copyright © {} REVENGE977 & Smart Code OOD", now.year());
+    let copyright = format!("Copyright (c) {} REVENGE977 & Smart Code OOD", now.year());
     let pkg_name = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "stremio-enhanced-ng".to_string());
     let pkg_version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "5.0.27".to_string());
     let exe_name = format!("{pkg_name}.exe");
@@ -69,9 +61,13 @@ fn setup_windows_resources(target: &str) {
     </application>
     <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
         <application>
+            <!-- Windows 10 and Windows 11 -->
             <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+            <!-- Windows 8.1 -->
             <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+            <!-- Windows 8 -->
             <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+            <!-- Windows 7 -->
             <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
         </application>
     </compatibility>
@@ -93,20 +89,85 @@ fn setup_windows_resources(target: &str) {
     res.set("LegalCopyright", &copyright);
     res.set("OriginalFilename", &exe_name);
     res.set_icon_with_id("images/stremio.ico", "MAINICON");
-    res.append_rc_content(r##"SPLASHIMAGE IMAGE ""images/stremio.png"""##);
+    res.append_rc_content(r##"SPLASHIMAGE IMAGE "images/stremio.png""##);
     res.compile().unwrap();
 
     let (arch, archive, flags) = match target {
         "x86_64-pc-windows-msvc" => ("x64", "libmpv-2_x64.zip", "/LIBPATH:.\\mpv-x64"),
         "aarch64-pc-windows-msvc" => ("arm64", "libmpv-2_arm64.zip", "/LIBPATH:.\\mpv-arm64"),
-        _ => return,
+        _ => panic!("Unsupported Windows target {}", target),
     };
     println!("cargo:rustc-env=ARCH={}", arch);
     println!("cargo:rustc-link-arg={}", flags);
-    if let Ok(archive_data) = std::fs::read(archive) {
-        let target_dir = PathBuf::from(".");
-        zip_extract::extract(std::io::Cursor::new(archive_data), &target_dir, true).ok();
+    let archive = fs::read(archive).unwrap();
+    let target_dir = PathBuf::from(".");
+    zip_extract::extract(Cursor::new(archive), &target_dir, true).ok();
+}
+
+fn setup_macos(target: &str) {
+    let arch = match target {
+        "aarch64-apple-darwin" => "arm64",
+        "x86_64-apple-darwin" => "x64",
+        _ => "universal",
+    };
+    println!("cargo:rustc-env=ARCH={}", arch);
+    println!("cargo:rerun-if-env-changed=MPV_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=MACPORTS_PREFIX");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+
+    // Allow explicit override via MPV_LIB_DIR or MACPORTS_PREFIX
+    if let Ok(mpv_lib_dir) = env::var("MPV_LIB_DIR") {
+        if !mpv_lib_dir.is_empty() {
+            println!("cargo:rustc-link-search=native={}", mpv_lib_dir);
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", mpv_lib_dir);
+        }
     }
+    if let Ok(macports_prefix) = env::var("MACPORTS_PREFIX") {
+        let lib_dir = format!("{}/lib", macports_prefix.trim_end_matches('/'));
+        println!("cargo:rustc-link-search=native={}", lib_dir);
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir);
+    }
+
+    // Try pkg-config (checks Homebrew and MacPorts if PKG_CONFIG_PATH or pkg-config is available)
+    for pkg_cfg_bin in [
+        "pkg-config",
+        "/opt/local/bin/pkg-config",
+        "/opt/homebrew/bin/pkg-config",
+        "/usr/local/bin/pkg-config",
+    ] {
+        if let Ok(output) = Command::new(pkg_cfg_bin)
+            .args(["--libs-only-L", "mpv"])
+            .output()
+        {
+            if output.status.success() {
+                let flags = String::from_utf8_lossy(&output.stdout);
+                for token in flags.split_whitespace() {
+                    if let Some(dir) = token.strip_prefix("-L") {
+                        println!("cargo:rustc-link-search=native={}", dir);
+                        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Standard library locations for MacPorts (/opt/local/lib), Homebrew Apple Silicon (/opt/homebrew/lib),
+    // and Homebrew Intel (/usr/local/lib)
+    for dir in ["/opt/local/lib", "/opt/homebrew/lib", "/usr/local/lib"] {
+        if Path::new(dir).exists() {
+            println!("cargo:rustc-link-search=native={}", dir);
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir);
+        }
+    }
+
+    // Support bundled libmpv.dylib inside Stremio Enhanced.app/Contents/Frameworks
+    println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+
+    println!("cargo:rustc-link-lib=dylib=mpv");
+    println!("cargo:rustc-link-lib=framework=Cocoa");
+    println!("cargo:rustc-link-lib=framework=QuartzCore");
+    println!("cargo:rustc-link-lib=framework=OpenGL");
 }
 
 fn watch_dir_recursively(dir: &Path) {
@@ -114,7 +175,7 @@ fn watch_dir_recursively(dir: &Path) {
         return;
     }
     println!("cargo:rerun-if-changed={}", dir.display());
-    if let Ok(entries) = std::fs::read_dir(dir) {
+    if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -142,32 +203,47 @@ fn setup_enhanced() {
     println!("cargo:rerun-if-changed={}", enhanced_package_json.display());
     println!("cargo:rerun-if-changed={}", enhanced_tsconfig.display());
 
-    let status = Command::new("node")
-        .arg(&enhanced_build_js)
-        .current_dir(&enhanced_dir)
-        .status();
+    let node_candidates = [
+        "node",
+        "/opt/local/bin/node",
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+    ];
 
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            if !enhanced_output.exists() {
-                panic!(
-                    "Failed to compile enhanced.js (node exit code: {:?}). Ensure Node.js and npm/npx are installed.",
-                    s.code()
-                );
-            } else {
-                eprintln!("Warning: Failed to rebuild enhanced.js; using existing bundle.");
+    let mut last_err = None;
+    let mut ran_successfully = false;
+
+    for node_bin in node_candidates {
+        match Command::new(node_bin)
+            .arg(&enhanced_build_js)
+            .current_dir(&enhanced_dir)
+            .status()
+        {
+            Ok(s) if s.success() => {
+                ran_successfully = true;
+                break;
             }
-        }
-        Err(e) => {
-            if !enhanced_output.exists() {
-                panic!(
-                    "Failed to run 'node' ({}) to compile enhanced.js, and no existing bundle was found. Please install Node.js.",
-                    e
-                );
-            } else {
-                eprintln!("Warning: Node.js not found ({e}); using existing enhanced.js.");
+            Ok(s) => {
+                last_err = Some(format!("{} exited with {:?}", node_bin, s.code()));
+            }
+            Err(e) => {
+                last_err = Some(format!("{}: {}", node_bin, e));
             }
         }
     }
+
+    if !ran_successfully {
+        if !enhanced_output.exists() {
+            panic!(
+                "Failed to compile enhanced.js ({:?}), and no existing bundle was found. Please install Node.js.",
+                last_err
+            );
+        } else {
+            eprintln!(
+                "Warning: Failed to rebuild enhanced.js ({:?}); using existing bundle.",
+                last_err
+            );
+        }
+    }
 }
+

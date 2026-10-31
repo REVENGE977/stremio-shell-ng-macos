@@ -1,7 +1,11 @@
 #![cfg_attr(all(not(test), not(debug_assertions)), windows_subsystem = "windows")]
+#![allow(unexpected_cfgs)]
+#[cfg(windows)]
 #[macro_use]
 extern crate bitflags;
-use std::{cell::RefCell, path::Path, process::exit};
+#[cfg(windows)]
+use std::cell::RefCell;
+use std::{path::Path, process::exit};
 use url::Url;
 use whoami::username;
 
@@ -89,7 +93,7 @@ fn main() {
 
     let command = opt
         .command
-        .as_deref()
+        .clone()
         .filter(|command| !command.is_empty())
         .map(stremio_app::open_media::normalize)
         .unwrap_or_default();

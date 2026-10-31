@@ -5,13 +5,15 @@ use flume::{Receiver, Sender};
 use libmpv2::{events::Event, Format, Mpv, SetData};
 #[cfg(windows)]
 use native_windows_gui::{self as nwg, PartialUi};
+#[cfg(windows)]
+use std::mem;
+#[cfg(windows)]
+use std::ptr;
 use std::{
     collections::VecDeque,
     convert::TryFrom,
     ffi::CString,
-    mem,
     os::raw::c_char,
-    ptr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -42,6 +44,349 @@ use crate::stremio_app::stremio_player::{
     CmdVal, InMsg, InMsgArgs, InMsgFn, PlayerEnded, PlayerEvent, PlayerProprChange, PlayerResponse,
     PropKey, PropVal,
 };
+
+#[cfg(target_os = "macos")]
+pub mod macos_gl {
+    use objc::declare::ClassDecl;
+    use objc::runtime::{Class, Object, Sel, BOOL, NO, YES};
+    use objc::{class, msg_send, sel, sel_impl};
+    use once_cell::sync::Lazy;
+    use std::ffi::{c_void, CString};
+    use std::os::raw::{c_char, c_int};
+    use std::sync::atomic::{AtomicPtr, Ordering};
+
+    static MPV_HANDLE: AtomicPtr<libmpv2_sys::mpv_handle> = AtomicPtr::new(std::ptr::null_mut());
+    static MPV_RENDER_CTX: AtomicPtr<libmpv2_sys::mpv_render_context> =
+        AtomicPtr::new(std::ptr::null_mut());
+    static MPV_GL_LAYER: AtomicPtr<Object> = AtomicPtr::new(std::ptr::null_mut());
+
+    extern "C" {
+        static _dispatch_main_q: libc::c_void;
+        fn dispatch_async_f(
+            queue: *const libc::c_void,
+            context: *mut libc::c_void,
+            work: unsafe extern "C" fn(*mut libc::c_void),
+        );
+        fn CGLChoosePixelFormat(
+            attribs: *const u32,
+            pix: *mut *mut libc::c_void,
+            npix: *mut i32,
+        ) -> i32;
+        fn CGLSetParameter(ctx: *mut libc::c_void, pname: u32, params: *const i32) -> i32;
+        fn glGetIntegerv(pname: u32, data: *mut i32);
+        fn glClearColor(red: f32, green: f32, blue: f32, alpha: f32);
+        fn glClear(mask: u32);
+        fn glFlush();
+    }
+
+    unsafe extern "C" fn get_proc_address(
+        _ctx: *mut c_void,
+        name: *const c_char,
+    ) -> *mut c_void {
+        static GL_FRAMEWORK: Lazy<usize> = Lazy::new(|| {
+            let path = CString::new(
+                "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL",
+            )
+            .unwrap();
+            let handle =
+                unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
+            handle as usize
+        });
+        let handle = *GL_FRAMEWORK as *mut libc::c_void;
+        if !handle.is_null() {
+            let sym = unsafe { libc::dlsym(handle, name) };
+            if !sym.is_null() {
+                return sym;
+            }
+        }
+        unsafe { libc::dlsym(libc::RTLD_DEFAULT, name) }
+    }
+
+    unsafe extern "C" fn handle_main_thread_update(_ctx: *mut libc::c_void) {
+        let rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
+        let layer = MPV_GL_LAYER.load(Ordering::Acquire);
+        if !rctx.is_null() && !layer.is_null() {
+            let flags = unsafe { libmpv2_sys::mpv_render_context_update(rctx) };
+            if (flags & (libmpv2_sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64)) != 0 {
+                let _: () = unsafe { msg_send![layer, setNeedsDisplay] };
+            }
+        } else if !layer.is_null() {
+            let _: () = unsafe { msg_send![layer, setNeedsDisplay] };
+        }
+    }
+
+    unsafe extern "C" fn on_mpv_render_update(_ctx: *mut c_void) {
+        unsafe {
+            dispatch_async_f(
+                &_dispatch_main_q as *const libc::c_void,
+                std::ptr::null_mut(),
+                handle_main_thread_update,
+            );
+        }
+    }
+
+    extern "C" fn copy_cgl_pixel_format(
+        this: &Object,
+        _cmd: Sel,
+        mask: u32,
+    ) -> *mut libc::c_void {
+        const KCGL_PFA_DOUBLE_BUFFER: u32 = 5;
+        const KCGL_PFA_COLOR_SIZE: u32 = 8;
+        const KCGL_PFA_ALPHA_SIZE: u32 = 11;
+        const KCGL_PFA_ACCELERATED: u32 = 73;
+        const KCGL_PFA_ALLOW_OFFLINE_RENDERERS: u32 = 96;
+        const KCGL_PFA_OPENGL_PROFILE: u32 = 99;
+        const KCGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
+
+        let attribs_core: [u32; 10] = [
+            KCGL_PFA_OPENGL_PROFILE,
+            KCGL_OGLP_VERSION_3_2_CORE,
+            KCGL_PFA_ACCELERATED,
+            KCGL_PFA_DOUBLE_BUFFER,
+            KCGL_PFA_COLOR_SIZE,
+            24,
+            KCGL_PFA_ALPHA_SIZE,
+            8,
+            KCGL_PFA_ALLOW_OFFLINE_RENDERERS,
+            0,
+        ];
+        let mut pix: *mut libc::c_void = std::ptr::null_mut();
+        let mut npix: i32 = 0;
+        let err = unsafe { CGLChoosePixelFormat(attribs_core.as_ptr(), &mut pix, &mut npix) };
+        if err == 0 && !pix.is_null() {
+            return pix;
+        }
+
+        let attribs_sw: [u32; 8] = [
+            KCGL_PFA_OPENGL_PROFILE,
+            KCGL_OGLP_VERSION_3_2_CORE,
+            KCGL_PFA_DOUBLE_BUFFER,
+            KCGL_PFA_COLOR_SIZE,
+            24,
+            KCGL_PFA_ALPHA_SIZE,
+            8,
+            0,
+        ];
+        let err = unsafe { CGLChoosePixelFormat(attribs_sw.as_ptr(), &mut pix, &mut npix) };
+        if err == 0 && !pix.is_null() {
+            return pix;
+        }
+
+        unsafe {
+            msg_send![super(this, class!(CAOpenGLLayer)), copyCGLPixelFormatForDisplayMask: mask]
+        }
+    }
+
+    extern "C" fn copy_cgl_context(
+        this: &Object,
+        _cmd: Sel,
+        pixel_format: *mut libc::c_void,
+    ) -> *mut libc::c_void {
+        let ctx: *mut libc::c_void = unsafe {
+            msg_send![super(this, class!(CAOpenGLLayer)), copyCGLContextForPixelFormat: pixel_format]
+        };
+        if !ctx.is_null() {
+            const KCGL_CP_SWAP_INTERVAL: u32 = 222;
+            let swap_interval: i32 = 1;
+            unsafe {
+                CGLSetParameter(ctx, KCGL_CP_SWAP_INTERVAL, &swap_interval);
+            }
+        }
+        ctx
+    }
+
+    extern "C" fn can_draw_in_cgl_context(
+        _this: &Object,
+        _cmd: Sel,
+        _ctx: *mut libc::c_void,
+        _pf: *mut libc::c_void,
+        _time: f64,
+        _display_time: *const libc::c_void,
+    ) -> BOOL {
+        YES
+    }
+
+    extern "C" fn draw_in_cgl_context(
+        this: &Object,
+        _cmd: Sel,
+        _ctx: *mut libc::c_void,
+        _pf: *mut libc::c_void,
+        _time: f64,
+        _display_time: *const libc::c_void,
+    ) {
+        let mut rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
+        if rctx.is_null() {
+            let mpv_handle = MPV_HANDLE.load(Ordering::Acquire);
+            if !mpv_handle.is_null() {
+                let mut init_params = libmpv2_sys::mpv_opengl_init_params {
+                    get_proc_address: Some(get_proc_address),
+                    get_proc_address_ctx: std::ptr::null_mut(),
+                };
+                let mut params = [
+                    libmpv2_sys::mpv_render_param {
+                        type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
+                        data: libmpv2_sys::MPV_RENDER_API_TYPE_OPENGL.as_ptr() as *mut c_void,
+                    },
+                    libmpv2_sys::mpv_render_param {
+                        type_:
+                            libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
+                        data: &mut init_params as *mut _ as *mut c_void,
+                    },
+                    libmpv2_sys::mpv_render_param {
+                        type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                        data: std::ptr::null_mut(),
+                    },
+                ];
+                let mut new_rctx: *mut libmpv2_sys::mpv_render_context = std::ptr::null_mut();
+                let err = unsafe {
+                    libmpv2_sys::mpv_render_context_create(
+                        &mut new_rctx,
+                        mpv_handle,
+                        params.as_mut_ptr(),
+                    )
+                };
+                if err >= 0 && !new_rctx.is_null() {
+                    unsafe {
+                        libmpv2_sys::mpv_render_context_set_update_callback(
+                            new_rctx,
+                            Some(on_mpv_render_update),
+                            this as *const Object as *mut c_void,
+                        );
+                    }
+                    MPV_RENDER_CTX.store(new_rctx, Ordering::Release);
+                    rctx = new_rctx;
+                } else {
+                    eprintln!("mpv: mpv_render_context_create failed with error {err}");
+                }
+            }
+        }
+
+        const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
+        const GL_VIEWPORT: u32 = 0x0BA2;
+        const GL_COLOR_BUFFER_BIT: u32 = 0x00004000;
+
+        let mut fbo: i32 = 0;
+        let mut viewport: [i32; 4] = [0, 0, 0, 0];
+        unsafe {
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &mut fbo);
+            glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
+        }
+
+        let width = viewport[2].max(1);
+        let height = viewport[3].max(1);
+
+        if !rctx.is_null() {
+            let mut fbo_data = libmpv2_sys::mpv_opengl_fbo {
+                fbo,
+                w: width,
+                h: height,
+                internal_format: 0,
+            };
+            let mut flip_y: c_int = 1;
+            let mut render_params = [
+                libmpv2_sys::mpv_render_param {
+                    type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
+                    data: &mut fbo_data as *mut _ as *mut c_void,
+                },
+                libmpv2_sys::mpv_render_param {
+                    type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
+                    data: &mut flip_y as *mut _ as *mut c_void,
+                },
+                libmpv2_sys::mpv_render_param {
+                    type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                    data: std::ptr::null_mut(),
+                },
+            ];
+            unsafe {
+                libmpv2_sys::mpv_render_context_render(rctx, render_params.as_mut_ptr());
+                libmpv2_sys::mpv_render_context_report_swap(rctx);
+                glFlush();
+            }
+        } else {
+            unsafe {
+                glClearColor(0.0, 0.0, 0.0, 1.0);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glFlush();
+            }
+        }
+    }
+
+    fn register_layer_class() -> &'static Class {
+        static LAYER_CLASS: Lazy<&'static Class> = Lazy::new(|| unsafe {
+            let superclass = class!(CAOpenGLLayer);
+            let mut decl = ClassDecl::new("StremioMpvOpenGLLayer", superclass)
+                .expect("Failed to declare StremioMpvOpenGLLayer");
+            decl.add_method(
+                sel!(copyCGLPixelFormatForDisplayMask:),
+                copy_cgl_pixel_format as extern "C" fn(&Object, Sel, u32) -> *mut libc::c_void,
+            );
+            decl.add_method(
+                sel!(copyCGLContextForPixelFormat:),
+                copy_cgl_context
+                    as extern "C" fn(&Object, Sel, *mut libc::c_void) -> *mut libc::c_void,
+            );
+            decl.add_method(
+                sel!(canDrawInCGLContext:pixelFormat:forLayerTime:displayTime:),
+                can_draw_in_cgl_context
+                    as extern "C" fn(
+                        &Object,
+                        Sel,
+                        *mut libc::c_void,
+                        *mut libc::c_void,
+                        f64,
+                        *const libc::c_void,
+                    ) -> BOOL,
+            );
+            decl.add_method(
+                sel!(drawInCGLContext:pixelFormat:forLayerTime:displayTime:),
+                draw_in_cgl_context
+                    as extern "C" fn(
+                        &Object,
+                        Sel,
+                        *mut libc::c_void,
+                        *mut libc::c_void,
+                        f64,
+                        *const libc::c_void,
+                    ),
+            );
+            decl.register()
+        });
+        *LAYER_CLASS
+    }
+
+    pub unsafe fn create_mpv_opengl_layer(scale_factor: f64) -> *mut Object {
+        let cls = register_layer_class();
+        let layer: *mut Object = msg_send![cls, layer];
+        let _: () = msg_send![layer, setAsynchronous: NO];
+        let _: () = msg_send![layer, setNeedsDisplayOnBoundsChange: YES];
+        let _: () = msg_send![layer, setOpaque: YES];
+        let _: () = msg_send![layer, setContentsScale: scale_factor];
+        MPV_GL_LAYER.store(layer, Ordering::Release);
+        layer
+    }
+
+    pub unsafe fn update_mpv_layer_scale(scale_factor: f64) {
+        let layer = MPV_GL_LAYER.load(Ordering::Acquire);
+        if !layer.is_null() {
+            let _: () = msg_send![layer, setContentsScale: scale_factor];
+            let _: () = msg_send![layer, setNeedsDisplay];
+        }
+    }
+
+    pub fn attach_mpv_handle(mpv_handle: *mut libmpv2_sys::mpv_handle, layer_handle: i64) {
+        if layer_handle != 0 {
+            MPV_GL_LAYER.store(layer_handle as *mut Object, Ordering::Release);
+        }
+        MPV_HANDLE.store(mpv_handle, Ordering::Release);
+        unsafe {
+            dispatch_async_f(
+                &_dispatch_main_q as *const libc::c_void,
+                std::ptr::null_mut(),
+                handle_main_thread_update,
+            );
+        }
+    }
+}
 
 struct ObserveProperty {
     name: String,
@@ -194,7 +539,8 @@ fn create_subtitle_thread(
                         break;
                     }
                     SubtitleWorkerEvent::Wake(Ok(())) => loop {
-                        let event = unsafe { &*libmpv2_sys::mpv_wait_event(mpv.ctx.as_ptr(), 0.0) };
+                        let event =
+                            unsafe { &*libmpv2_sys::mpv_wait_event(mpv.ctx.as_ptr(), 0.0) };
                         match event.event_id {
                             libmpv2_sys::mpv_event_id_MPV_EVENT_NONE => break,
                             libmpv2_sys::mpv_event_id_MPV_EVENT_SHUTDOWN => return,
@@ -308,7 +654,9 @@ extern "system" {
     fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
 }
 
+#[cfg(windows)]
 const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: u32 = 15;
+#[cfg(windows)]
 const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: u32 = 2;
 
 #[cfg(windows)]
@@ -321,6 +669,7 @@ struct DisplayconfigGetAdvancedColorInfo2 {
     active_color_mode: u32,
 }
 
+#[cfg(windows)]
 fn with_gpu_next_fallback(vo: String) -> String {
     let mut outputs = vo
         .split(',')
@@ -341,6 +690,11 @@ fn with_gpu_next_fallback(vo: String) -> String {
     }
 
     format!("{},", outputs.join(","))
+}
+
+#[cfg(not(windows))]
+fn with_gpu_next_fallback(_vo: String) -> String {
+    "libmpv".to_string()
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -422,6 +776,7 @@ fn create_mpv(window_handle: i64) -> Mpv {
                     .expect(concat!("failed to set ", $name));
             };
         }
+        #[cfg(windows)]
         set_property!("wid", window_handle as i64);
         set_property!("title", crate::stremio_app::constants::APP_NAME);
         set_property!("audio-client-name", crate::stremio_app::constants::APP_NAME);
@@ -437,8 +792,11 @@ fn create_mpv(window_handle: i64) -> Mpv {
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=%23%408,429,500,502,503,504,reconnect_delay_max=15"
         );
-        // gpu-next: libplacebo VO with modern HDR tone-mapping; gpu, is the fallback.
+        #[cfg(windows)]
         set_property!("vo", "gpu-next,gpu,");
+        #[cfg(not(windows))]
+        set_property!("vo", "libmpv");
+
         #[cfg(windows)]
         let mut options = vec![
             ("gpu-context", "d3d11"),
@@ -455,6 +813,7 @@ fn create_mpv(window_handle: i64) -> Mpv {
             ("target-colorspace-hint-mode", "target"),
             ("tone-mapping", "bt.2390"),
             ("dither-depth", "auto"),
+            ("keep-open", "yes"),
         ];
         if gpu_video_processing::unified_memory_architecture() {
             options.push(("profile", "fast"));
@@ -471,8 +830,13 @@ fn create_mpv(window_handle: i64) -> Mpv {
             }
         }
         Ok(())
-    });
-    mpv.expect("cannot build MPV")
+    })
+    .expect("cannot build MPV");
+
+    #[cfg(target_os = "macos")]
+    macos_gl::attach_mpv_handle(mpv.ctx.as_ptr(), window_handle);
+
+    mpv
 }
 
 fn create_display_output_thread(
@@ -506,6 +870,7 @@ fn current_display_output_state(mpv: &Mpv, window_handle: HWND) -> DisplayOutput
     }
 }
 
+#[cfg(windows)]
 fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
     let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
     match monitor_hdr_active(monitor) {
@@ -515,6 +880,7 @@ fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
     }
 }
 
+#[cfg(windows)]
 fn current_video_filter_scale(mpv: &Mpv, window_handle: HWND) -> u32 {
     let Some(video_height) = current_video_height(mpv) else {
         return 100;
@@ -529,12 +895,14 @@ fn current_video_filter_scale(mpv: &Mpv, window_handle: HWND) -> u32 {
     ((display_height / video_height).min(4.0) * 100.0).round() as u32
 }
 
+#[cfg(windows)]
 fn current_video_height(mpv: &Mpv) -> Option<f64> {
     let video_params = mpv.get_property::<String>("video-params").ok()?;
     let video_params = serde_json::from_str::<serde_json::Value>(&video_params).ok()?;
     video_params.get("h").and_then(serde_json::Value::as_f64)
 }
 
+#[cfg(windows)]
 fn current_monitor_height(window_handle: HWND) -> Option<f64> {
     let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
     if monitor.is_null() {
@@ -550,6 +918,7 @@ fn current_monitor_height(window_handle: HWND) -> Option<f64> {
     Some((monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top) as f64)
 }
 
+#[cfg(windows)]
 fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, gpu_video_processing: bool) {
     // Target colorspace follows the display so native HDR still passes through; the RTX
     // HDR filter is the opt-in part and only makes sense on an HDR display.
@@ -585,6 +954,29 @@ fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, gpu_video_pro
     }
 }
 
+#[cfg(not(windows))]
+fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, _gpu_video_processing: bool) {
+    let color = match state.mode {
+        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
+            ("target-colorspace-hint", "auto"),
+            ("target-trc", "auto"),
+            ("target-prim", "auto"),
+        ],
+        DisplayOutputMode::Sdr => [
+            ("target-colorspace-hint", "yes"),
+            ("target-trc", "auto"),
+            ("target-prim", "bt.709"),
+        ],
+    };
+
+    for (name, value) in color {
+        if let Err(error) = mpv.set_property(name, value) {
+            eprintln!("mpv: cannot set {name}={value}: {error:?}");
+        }
+    }
+}
+
+#[cfg(windows)]
 fn monitor_hdr_active(monitor: HMONITOR) -> Option<bool> {
     if monitor.is_null() {
         return None;
@@ -605,6 +997,7 @@ fn monitor_hdr_active(monitor: HMONITOR) -> Option<bool> {
     None
 }
 
+#[cfg(windows)]
 fn monitor_device_name(monitor: HMONITOR) -> Option<[u16; 32]> {
     let mut monitor_info: MONITORINFOEXW = unsafe { mem::zeroed() };
     monitor_info.cbSize = mem::size_of::<MONITORINFOEXW>() as DWORD;
@@ -618,6 +1011,7 @@ fn monitor_device_name(monitor: HMONITOR) -> Option<[u16; 32]> {
     }
 }
 
+#[cfg(windows)]
 fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
     for _ in 0..3 {
         let mut path_count = 0;
@@ -656,6 +1050,7 @@ fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
     None
 }
 
+#[cfg(windows)]
 fn display_source_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<DISPLAYCONFIG_SOURCE_DEVICE_NAME> {
     let mut source_name: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { mem::zeroed() };
     source_name.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
@@ -673,6 +1068,7 @@ fn display_source_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<DISPLAYCONFIG_S
     }
 }
 
+#[cfg(windows)]
 fn display_hdr_active(path: &DISPLAYCONFIG_PATH_INFO) -> Option<bool> {
     let mut color_info: DisplayconfigGetAdvancedColorInfo2 = unsafe { mem::zeroed() };
     color_info.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
@@ -882,28 +1278,41 @@ fn create_message_thread(
                 }
                 InMsg(InMsgFn::MpvSetProp, InMsgArgs::StProp(name, PropVal::Str(value))) => {
                     let is_vo = name.to_string() == "vo";
-                    let value = if is_vo {
-                        with_gpu_next_fallback(value)
-                    } else {
-                        value
-                    };
-                    set_property(name, value, &mpv);
+                    #[cfg(windows)]
+                    {
+                        let value = if is_vo {
+                            with_gpu_next_fallback(value)
+                        } else {
+                            value
+                        };
+                        set_property(name, value, &mpv);
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        if !is_vo {
+                            set_property(name, value, &mpv);
+                        }
+                    }
                     // vo reinit reverts color props to defaults; re-assert for the current display.
                     if is_vo {
+                        #[cfg(windows)]
+                        let state = current_display_output_state(&mpv, window_handle as HWND);
+                        #[cfg(not(windows))]
+                        let state = current_display_output_state(&mpv, window_handle);
                         apply_display_output_mode(
                             &mpv,
-                            current_display_output_state(&mpv, window_handle as HWND),
+                            state,
                             gpu_video_processing.load(Ordering::Relaxed),
                         );
                     }
                 }
                 InMsg(InMsgFn::MpvSetGpuVideoProcessing, InMsgArgs::Flag(enabled)) => {
                     gpu_video_processing.store(enabled, Ordering::Relaxed);
-                    apply_display_output_mode(
-                        &mpv,
-                        current_display_output_state(&mpv, window_handle as HWND),
-                        enabled,
-                    );
+                    #[cfg(windows)]
+                    let state = current_display_output_state(&mpv, window_handle as HWND);
+                    #[cfg(not(windows))]
+                    let state = current_display_output_state(&mpv, window_handle);
+                    apply_display_output_mode(&mpv, state, enabled);
                 }
                 InMsg(InMsgFn::MpvCommand, InMsgArgs::Cmd(cmd)) => {
                     send_command(cmd);
@@ -914,6 +1323,14 @@ fn create_message_thread(
             }
         }
     })
+}
+
+#[cfg(not(windows))]
+fn current_display_output_state(_mpv: &Mpv, _window_handle: isize) -> DisplayOutputState {
+    DisplayOutputState {
+        mode: DisplayOutputMode::Auto,
+        scale_percent: 100,
+    }
 }
 
 #[cfg(test)]
@@ -952,14 +1369,5 @@ mod tests {
         state.begin_transition(false);
         state.file_loaded();
         assert_eq!(state.playback_restarted(), None);
-    }
-}
-
-
-#[cfg(not(windows))]
-fn current_display_output_state(_mpv: &Mpv, _window_handle: isize) -> DisplayOutputState {
-    DisplayOutputState {
-        mode: DisplayOutputMode::Auto,
-        scale_percent: 100,
     }
 }

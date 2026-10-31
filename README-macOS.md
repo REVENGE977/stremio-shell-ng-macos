@@ -1,82 +1,56 @@
-# Stremio Enhanced macOS Port
+# Stremio Enhanced Shell (`stremio-shell-ng`) — macOS Port
 
-This repository contains the macOS-compatible version of **Stremio Shell NG (Enhanced)**, retaining the high-performance embedded MPV architecture without requiring a rewrite of the core player, streaming server, or Enhanced frontend subsystem.
+This directory contains the macOS port of `stremio-shell-ng` supporting both **Intel Macs (`x86_64-apple-darwin`, including MacPorts environments)** and **Apple Silicon Macs (`aarch64-apple-darwin`)**.
 
----
+## Architecture on macOS
 
-## Architecture Overview
-
-### 1. Embedded MPV Implementation on macOS
-
-In the original Windows version:
-- The shell attaches `libmpv` directly to the native `HWND` using mpv's `wid` (Window ID) option.
-- An Edge WebView2 instance is layered directly on top of the window with an alpha channel of 0 (transparent background).
-- When video playback starts, the WebUI route (`#/player`) triggers `transparencyBridge.ts`, which makes DOM containers transparent, allowing MPV's hardware-accelerated video frames to render directly beneath the HTML/CSS controls.
-
-On macOS, the **exact same embedded architecture** is achieved natively:
-1. **Native View Composition:**
-   - The native `NSWindow`'s `contentView` hosts two synchronized subviews:
-     - **Bottom View (`mpv_view`):** A native Cocoa `NSView` allocated with `[contentView addSubview:mpv_view positioned:NSWindowBelow relativeTo:nil]`.
-     - **Top View (`WKWebView`):** A transparent native WebKit view (`wry` with `.with_transparent(true)`) that layers directly above `mpv_view`.
-2. **MPV Window Embedding (`--wid`):**
-   - The `libmpv` player instance is initialized with `set_property!("wid", mpv_view_ptr as i64)`.
-   - On macOS, `libmpv` attaches directly to the provided `NSView` pointer and utilizes its modern **`gpu-next`** (Metal / libplacebo) or **`gpu`** video output backend with native **VideoToolbox (`hwdec = auto`)** hardware decoding.
-3. **Transparent Web Overlay:**
-   - Both `mpv_view` and `WKWebView` have `NSViewWidthSizable | NSViewHeightSizable` autoresizing masks, staying pixel-perfectly synchronized during window resizing and full-screen transitions.
-   - All mouse, scroll, keyboard, and click interactions are intercepted by `WKWebView` on top.
-   - All playback commands (`mpv-command`, subtitle additions, track selection, seeking, pause) route through the IPC channels to the background MPV client and subtitle worker threads.
+1. **Embedded MPV Player (`CAOpenGLLayer` + `libmpv` Render API)**:
+   - Uses `libmpv`'s `mpv_render_context` API (`vo=libmpv`, `hwdec=auto`) rendered into a custom `CAOpenGLLayer` (`StremioMpvOpenGLLayer`) attached to an `NSView` positioned directly underneath the `WKWebView` inside `WryWebViewParent`.
+   - Unlike `--wid` (which fails or opens a separate window on MacPorts and modern Homebrew `libmpv` builds), `CAOpenGLLayer` + `MPV_RENDER_API_TYPE_OPENGL` works across **all** MacPorts and Homebrew `mpv` builds on both Intel and Apple Silicon Macs.
+2. **Transparent `WKWebView` Overlay (`tao` + `wry`)**:
+   - Renders the Stremio WebUI and Stremio Enhanced plugins/themes with a transparent background (`wry` `transparent` feature enabled) above the OpenGL video layer.
+   - Provides full `window.qt.webChannelTransport` and `window.chrome.webview` shims on top of `wry`'s native `window.ipc` handler.
+3. **Streaming Server & FFmpeg Discovery**:
+   - Automatically searches MacPorts (`/opt/local/bin`), Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), and `.app` bundle resources for `node`, `ffmpeg`, `ffprobe`, and `server.js`.
 
 ---
 
-## What Was Preserved vs. What Was Adapted
+## Building on an Intel Mac with MacPorts (No Homebrew)
 
-| Component | Status | Description |
-| :--- | :--- | :--- |
-| **`stremio_app/enhanced/`** (TypeScript/JS) | **100% Preserved** | All marketplace components, themes, plugins, modals, fetch interceptor, server manager, transparency bridge, and video bridge run unmodified in WebKit. |
-| **`stremio_player/communication.rs`** | **100% Preserved** | Protocol message structures (`InMsg`, `CmdVal`, `PropVal`, `PlayerResponse`). |
-| **`stremio_player/player.rs`** | **95% Preserved** | The subtitle thread, asynchronous worker queue, event thread, video readiness state tracking, and property observer logic are completely shared. Display output state and context setup are conditionally compiled (`d3d11` on Windows, native Cocoa/Metal on macOS). |
-| **`stremio_server/`** | **95% Preserved** | Spawning `server.js` with Node.js runtime, stdout/stderr line streaming, and HTTP readiness checks are preserved. Windows Job Objects are replaced with Unix process groups on macOS. |
-| **Window & Web Layer** | **Adapted** | Windows-only `native-windows-gui` and `webview2` are complemented with `tao` + `wry` + Cocoa view composition for macOS. |
-| **Single-Instance IPC** | **Adapted** | Windows Named Pipes are complemented with Unix Domain Sockets (`/tmp/com.stremio5.<user>`). |
-
----
-
-## Prerequisites (macOS)
-
-Install dependencies via [Homebrew](https://brew.sh/):
-
-```bash
-# Install mpv (provides libmpv.dylib) and Node.js
-brew install mpv node
-```
-
-Make sure Rust is installed:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+1. Ensure **Xcode Command Line Tools**, **MacPorts**, and **Rust** are installed:
+   ```bash
+   xcode-select --install
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+2. Run the MacPorts build script:
+   ```bash
+   chmod +x build-macos-macports.sh
+   ./build-macos-macports.sh
+   ```
+   The script will:
+   - Detect MacPorts in `/opt/local` (or `$MACPORTS_PREFIX` if overridden).
+   - Install `mpv`, `pkgconfig`, and `nodejs` / `npm` via `sudo port install` if not already installed.
+   - Configure linker flags (`-L /opt/local/lib`, `-Wl,-rpath,/opt/local/lib`, `-Wl,-rpath,@executable_path/../Frameworks`).
+   - Build `enhanced.js` and compile the Rust binary for `x86_64-apple-darwin`.
+   - Package `target/release/Stremio Enhanced.app` (including bundling `libmpv*.dylib` into `Contents/Frameworks`).
 
 ---
 
-## Building and Running
+## Building with Homebrew (Apple Silicon or Intel)
 
-### Fast Build via Script:
 ```bash
 chmod +x build-macos.sh
 ./build-macos.sh
 ```
 
-### Manual Build:
+---
+
+## Running the App
+
 ```bash
-# 1. Compile Enhanced frontend bundle
-cd src/stremio_app/enhanced
-npm install
-node build.js
-cd ../../../
-
-# 2. Compile and run with Cargo
-cargo run --release
+open "target/release/Stremio Enhanced.app"
 ```
-
-The resulting application bundle will be created at:
-`target/release/Stremio Enhanced.app`
-
+Or run the binary directly from Terminal to see logs:
+```bash
+./target/release/stremio-enhanced-ng
+```

@@ -1,26 +1,21 @@
 use std::{
-    cell::RefCell,
-    collections::VecDeque,
     io::Read,
-    path::{Path, PathBuf},
-    rc::Rc,
+    process::Command,
     str,
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use flume::{Receiver, Sender};
 use serde_json::json;
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
+    event_loop::{ControlFlow, EventLoopBuilder},
     platform::macos::WindowExtMacOS,
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
-use url::Url;
-use wry::{WebView, WebViewBuilder};
+use wry::{DragDropEvent, WebViewBuilder};
 
 use crate::stremio_app::{
     constants::{
@@ -31,7 +26,7 @@ use crate::stremio_app::{
     enhanced::{EnhancedAction, EnhancedManager, ENHANCED_SCRIPT},
     ipc::{CacheDirectoryRequest, RPCRequest, RPCResponse},
     open_media,
-    stremio_player::Player,
+    stremio_player::{player::macos_gl, Player},
     stremio_server::{ServerEvent, StremioServer},
     window_settings::WindowSettings,
     PipeServer,
@@ -39,8 +34,14 @@ use crate::stremio_app::{
 
 pub enum UserEvent {
     ExecuteScript(String),
+    DispatchWebMessage(String),
     Navigate(String),
     SetFullscreen(bool),
+    SetInterfaceScale(u64),
+    FocusWindow,
+    PollServerEvents,
+    RestartServer,
+    StopServer,
     Quit,
 }
 
@@ -50,11 +51,9 @@ pub fn run_macos(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("[macOS Shell] Initializing Stremio Enhanced macOS runtime...");
 
-    // Create event loop
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    // Load window settings or use default size
     let saved_settings = WindowSettings::load().unwrap_or_default();
     let initial_width = if saved_settings.width > 0.0 {
         saved_settings.width
@@ -67,7 +66,6 @@ pub fn run_macos(
         720.0
     };
 
-    // Create native window
     let window = WindowBuilder::new()
         .with_title(APP_NAME)
         .with_inner_size(LogicalSize::new(initial_width, initial_height))
@@ -79,55 +77,31 @@ pub fn run_macos(
         .with_visible(!opt.start_hidden)
         .build(&event_loop)?;
 
-    // Setup native MPV view inside NSWindow content view
-    let mpv_view_ptr: isize = unsafe {
-        use cocoa::appkit::NSView;
-        use cocoa::base::id;
-        use cocoa::foundation::NSRect;
-        use objc::{msg_send, sel, sel_impl};
+    // Separate incoming (JS -> Rust) and outgoing (Rust -> JS) channels
+    let (ipc_in_tx, ipc_in_rx) = flume::unbounded::<String>();
+    let (web_out_tx, web_out_rx) = flume::unbounded::<String>();
 
-        let content_view: id = window.ns_view() as id;
-        let () = msg_send![content_view, setWantsLayer: true];
-        let bounds: NSRect = msg_send![content_view, bounds];
-
-        // Allocate and initialize custom NSView for mpv
-        let mpv_view: id = msg_send![objc::class!(NSView), alloc];
-        let mpv_view: id = msg_send![mpv_view, initWithFrame: bounds];
-        let () = msg_send![mpv_view, setWantsLayer: true];
-        // NSViewWidthSizable (2) | NSViewHeightSizable (16) = 18
-        let () = msg_send![mpv_view, setAutoresizingMask: 18u64];
-
-        // Add mpv_view positioned below other subviews (NSWindowBelow = -1)
-        let () = msg_send![content_view, addSubview: mpv_view positioned: -1isize relativeTo: 0isize];
-        println!("[macOS Shell] Created embedded mpv NSView: {:?}", mpv_view);
-        mpv_view as isize
-    };
-
-    // Initialize player with the mpv NSView pointer
-    let mut player = Player::default();
-    player.init(mpv_view_ptr as i64);
-
-    let (player_tx, player_rx) = player
-        .channel
-        .borrow()
-        .clone()
-        .expect("Cannot obtain communication channel for Player");
-
-    // Channels for Web communication
-    let (web_tx, web_rx) = flume::unbounded::<String>();
-    let web_tx_player = web_tx.clone();
-    let web_tx_web = web_tx.clone();
-    let web_tx_open = web_tx.clone();
+    // Forward outgoing RPC responses to the WebView via UserEvent::DispatchWebMessage
+    let proxy_for_out = proxy.clone();
+    thread::spawn(move || {
+        while let Ok(msg) = web_out_rx.recv() {
+            proxy_for_out
+                .send_event(UserEvent::DispatchWebMessage(msg))
+                .ok();
+        }
+    });
 
     // Open media handler
-    let (open_sender, open_receiver) = flume::unbounded::<crate::stremio_app::open_media::OpenRequest>();
+    let (open_sender, open_receiver) =
+        flume::unbounded::<crate::stremio_app::open_media::OpenRequest>();
     let command_arg = opt
         .command
-        .as_deref()
+        .clone()
         .filter(|cmd| !cmd.is_empty())
         .map(open_media::normalize)
         .unwrap_or_default();
 
+    let web_out_open = web_out_tx.clone();
     thread::spawn(move || {
         let mut ready = false;
         let mut pending = (!command_arg.is_empty()).then_some(command_arg);
@@ -140,7 +114,7 @@ pub fn run_macos(
             if ready {
                 if let Some(input) = pending.take() {
                     let message = open_media::message(&input);
-                    web_tx_open
+                    web_out_open
                         .send(RPCResponse::response_message(Some(message)))
                         .ok();
                 }
@@ -158,7 +132,9 @@ pub fn run_macos(
                 if let Ok(s) = str::from_utf8(&buf) {
                     if !s.is_empty() {
                         open_sender_clone
-                            .send(crate::stremio_app::open_media::OpenRequest::Input(s.to_string()))
+                            .send(crate::stremio_app::open_media::OpenRequest::Input(
+                                s.to_string(),
+                            ))
                             .ok();
                     }
                 }
@@ -171,7 +147,10 @@ pub fn run_macos(
     let (ui_data, active_theme_css) = {
         let mgr = enhanced.lock().unwrap();
         let running = crate::stremio_app::stremio_server::is_streaming_server_online();
-        (mgr.ui_data(running), mgr.active_theme().map(|t| t.content.clone()))
+        (
+            mgr.ui_data(running),
+            mgr.active_theme().map(|t| t.content.clone()),
+        )
     };
 
     let initial_data_json = serde_json::to_string(&ui_data).unwrap_or_else(|_| "{}".to_string());
@@ -180,59 +159,86 @@ pub fn run_macos(
 
     let server_ipc_key = std::env::var(SERVER_IPC_KEY).unwrap_or_default();
 
-    // Prepare initialization script for WKWebView
+    // Prepare initialization script for WKWebView.
+    // Note: wry defines window.ipc via Object.defineProperty(..., Object.freeze({ postMessage })).
+    // We preserve window.ipc and build window.chrome.webview and window.qt.webChannelTransport on top of it.
     let init_script = format!(
         r##"
         (function() {{
+            if (window.self !== window.top) return;
             try {{
                 window.stremio_server_ipc_key = {server_ipc_key:?};
                 window.__STREMIO_SHELL__ = true;
                 window.__INITIAL_ENHANCED_DATA__ = {initial_data_json};
 
-                // Shim Qt WebChannel transport to route through window.ipc
+                const listeners = [];
+                const postToNative = function(msg) {{
+                    try {{
+                        const payload = typeof msg === 'string' ? msg : JSON.stringify(msg);
+                        if (window.ipc && typeof window.ipc.postMessage === 'function') {{
+                            window.ipc.postMessage(payload);
+                        }} else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc) {{
+                            window.webkit.messageHandlers.ipc.postMessage(payload);
+                        }}
+                    }} catch(e) {{}}
+                }};
+
+                window.chrome = window.chrome || {{}};
+                window.chrome.webview = {{
+                    postMessage: postToNative,
+                    addEventListener: function(name, listener) {{
+                        if (name === 'message' && typeof listener === 'function') {{
+                            listeners.push(listener);
+                        }}
+                    }},
+                    removeEventListener: function(name, listener) {{
+                        const idx = listeners.indexOf(listener);
+                        if (idx !== -1) listeners.splice(idx, 1);
+                    }},
+                    __dispatchMessage: function(dataStr) {{
+                        const ev = {{ data: dataStr }};
+                        if (window.qt && window.qt.webChannelTransport && typeof window.qt.webChannelTransport.onmessage === 'function') {{
+                            try {{ window.qt.webChannelTransport.onmessage(ev); }} catch(e) {{}}
+                        }}
+                        for (let i = 0; i < listeners.length; i++) {{
+                            try {{ listeners[i](ev); }} catch(e) {{}}
+                        }}
+                    }}
+                }};
+
                 window.qt = {{
                     webChannelTransport: {{
-                        send: function(msg) {{
-                            try {{
-                                if (window.ipc) {{
-                                    window.ipc.postMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
-                                }}
-                            }} catch(e) {{}}
-                        }}
+                        send: postToNative
                     }}
                 }};
 
-                // Shim Chrome WebView2 postMessage to route through window.ipc
-                window.chrome = {{
-                    webview: {{
-                        postMessage: function(msg) {{
-                            try {{
-                                if (window.ipc) {{
-                                    window.ipc.postMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
-                                }}
-                            }} catch(e) {{}}
-                        }}
-                    }}
-                }};
-
-                // Intercept clicks for external player triggers
                 document.addEventListener('click', function(event) {{
-                    const link = event.target.closest('a[href]');
+                    const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
                     const href = link && link.getAttribute('href');
                     if (href && (href.startsWith('data:application/octet-stream;charset=utf-8;base64,') || /^vlc:/i.test(href))) {{
                         event.preventDefault();
-                        if (window.ipc) {{
-                            window.ipc.postMessage(JSON.stringify({{ id: 1, args: ['play-external', href] }}));
-                        }}
+                        postToNative(JSON.stringify({{ id: 1, args: ['play-external', href] }}));
                     }}
                 }}, true);
 
-                // Inject active theme
+                window.addEventListener('load', function() {{
+                    if (typeof initShellComm === 'function') {{
+                        try {{ initShellComm(); }} catch(e) {{}}
+                    }}
+                }}, false);
+
                 try {{
-                    var s = document.createElement('style');
-                    s.id = 'activeTheme';
-                    s.textContent = {theme_css_json};
-                    (document.head || document.documentElement).appendChild(s);
+                    const applyInitialTheme = function() {{
+                        var s = document.getElementById('activeTheme') || document.createElement('style');
+                        s.id = 'activeTheme';
+                        s.textContent = {theme_css_json};
+                        (document.head || document.documentElement).appendChild(s);
+                    }};
+                    if (document.head || document.documentElement) {{
+                        applyInitialTheme();
+                    }} else {{
+                        document.addEventListener('DOMContentLoaded', applyInitialTheme);
+                    }}
                 }} catch(e) {{}}
             }} catch(e) {{
                 console.error('[macOS Shell] Initialization script error:', e);
@@ -242,7 +248,6 @@ pub fn run_macos(
         "##
     );
 
-    // Initial endpoint URL
     let initial_endpoint = if opt.development {
         DEV_ENDPOINT.to_string()
     } else if opt.staging {
@@ -251,78 +256,107 @@ pub fn run_macos(
         opt.webui_url.clone()
     };
 
-    // Build transparent WKWebView
-    let web_tx_handler = web_tx.clone();
-    let webview = WebViewBuilder::new(&window)
+    // Build transparent WKWebView FIRST (because wry replaces ns_window.contentView with WryWebViewParent)
+    let ipc_in_handler = ipc_in_tx.clone();
+    let web_out_drag = web_out_tx.clone();
+    let webview = WebViewBuilder::new()
         .with_transparent(true)
+        .with_autoplay(true)
         .with_initialization_script(&init_script)
-        .with_ipc_handler(move |msg: String| {
-            web_tx_handler.send(msg).ok();
+        .with_ipc_handler(move |req: wry::http::Request<String>| {
+            ipc_in_handler.send(req.into_body()).ok();
+        })
+        .with_drag_drop_handler(move |event| {
+            if let DragDropEvent::Drop { paths, .. } = event {
+                if let Some(first) = paths.first().and_then(|p| p.to_str()) {
+                    web_out_drag
+                        .send(RPCResponse::response_message(Some(json!([
+                            "dragdrop",
+                            [first]
+                        ]))))
+                        .ok();
+                }
+            }
+            true
         })
         .with_url(&initial_endpoint)
-        .build()?;
+        .build(&window)?;
 
-    let webview = Arc::new(Mutex::new(webview));
-    let proxy_for_player = proxy.clone();
+    // Now attach our CAOpenGLLayer-backed mpv_view into WryWebViewParent directly BELOW WryWebView!
+    let mpv_layer_ptr: i64 = unsafe {
+        use cocoa::base::id;
+        use cocoa::foundation::NSRect;
+        use objc::{class, msg_send, sel, sel_impl};
+
+        let ns_window: id = window.ns_window() as id;
+        let content_view: id = msg_send![ns_window, contentView];
+        let _: () = msg_send![content_view, setWantsLayer: true];
+        let bounds: NSRect = msg_send![content_view, bounds];
+
+        let mpv_view: id = msg_send![class!(NSView), alloc];
+        let mpv_view: id = msg_send![mpv_view, initWithFrame: bounds];
+        let scale_factor = window.scale_factor();
+        let gl_layer = macos_gl::create_mpv_opengl_layer(scale_factor);
+        let _: () = msg_send![mpv_view, setLayer: gl_layer];
+        let _: () = msg_send![mpv_view, setWantsLayer: true];
+        // NSViewWidthSizable (2) | NSViewHeightSizable (16) = 18
+        let _: () = msg_send![mpv_view, setAutoresizingMask: 18u64];
+
+        // Position mpv_view at the bottom of WryWebViewParent (NSWindowBelow = -1)
+        let nil_view: id = std::ptr::null_mut();
+        let _: () =
+            msg_send![content_view, addSubview: mpv_view positioned: -1isize relativeTo: nil_view];
+        println!(
+            "[macOS Shell] Attached embedded MPV OpenGL layer {:?} inside contentView {:?}",
+            gl_layer, content_view
+        );
+        gl_layer as i64
+    };
+
+    // Initialize MPV Player with the CAOpenGLLayer handle
+    let mut player = Player::default();
+    player.init(mpv_layer_ptr);
+
+    let (player_tx, player_rx) = player
+        .channel
+        .borrow()
+        .clone()
+        .expect("Cannot obtain communication channel for Player");
 
     // Forward MPV player events to WebUI
+    let web_out_player = web_out_tx.clone();
     thread::spawn(move || {
         while let Ok(msg) = player_rx.recv() {
-            let escaped_msg = serde_json::to_string(&msg).unwrap_or_else(|_| "\"\"".to_string());
-            let script = format!(
-                "if (window.qt && window.qt.webChannelTransport && window.qt.webChannelTransport.onmessage) {{ window.qt.webChannelTransport.onmessage({{ data: {escaped_msg} }}); }}"
-            );
-            proxy_for_player
-                .send_event(UserEvent::ExecuteScript(script))
-                .ok();
+            web_out_player.send(msg).ok();
         }
     });
 
-    // Start Stremio Streaming Server
+    // Manage Stremio Streaming Server
     let local_server_url = Arc::new(Mutex::new(None::<String>));
-    let local_server_clone = local_server_url.clone();
-    let proxy_for_server = proxy.clone();
-    let webui_url_base = opt.webui_url.clone();
-
+    let mut server = StremioServer::default();
+    let proxy_for_server_notify = proxy.clone();
+    server.notify = Some(Arc::new(move || {
+        proxy_for_server_notify
+            .send_event(UserEvent::PollServerEvents)
+            .ok();
+    }));
     if !opt.development {
-        thread::spawn(move || {
-            let mut server = StremioServer::default();
-            server.restart();
-            for event in server.events() {
-                match event {
-                    ServerEvent::Ready(endpoint) => {
-                        println!("[macOS Shell] Streaming server ready at {endpoint}");
-                        *local_server_clone.lock().unwrap() = Some(endpoint.clone());
-                        let target_url = if webui_url_base.trim_end_matches('/')
-                            == WEB_ENDPOINT.trim_end_matches('/')
-                        {
-                            web_endpoint_with_streaming_server(&endpoint)
-                        } else {
-                            webui_url_base.clone()
-                        };
-                        proxy_for_server
-                            .send_event(UserEvent::Navigate(target_url))
-                            .ok();
-                    }
-                    ServerEvent::Failed(err) => {
-                        eprintln!("[macOS Shell] Streaming server failed: {err}");
-                    }
-                }
-            }
-        });
+        server.restart();
     }
 
     // Discord RPC
-    let discord_rpc = DiscordRpc::new(web_tx.clone());
+    let discord_rpc = DiscordRpc::new(web_out_tx.clone());
 
-    // Main Web message processing thread
+    // Main Web message processing thread (JS -> Rust)
     let proxy_for_web = proxy.clone();
     let enhanced_clone = enhanced.clone();
     let player_tx_clone = player_tx.clone();
     let open_sender_web = open_sender.clone();
+    let web_out_rpc = web_out_tx.clone();
+    let local_server_for_rpc = local_server_url.clone();
 
     thread::spawn(move || {
-        while let Ok(raw) = web_rx.recv() {
+        while let Ok(raw) = ipc_in_rx.recv() {
             // Check for Enhanced actions
             if let Ok(action) = serde_json::from_str::<EnhancedAction>(&raw) {
                 match action {
@@ -367,14 +401,17 @@ pub fn run_macos(
                         }
                     }
                     EnhancedAction::StartStreamingServer { id } => {
-                        let running =
-                            crate::stremio_app::stremio_server::is_streaming_server_online();
-                        let script = format!(
-                            "window.__receiveServerStartResult && window.__receiveServerStartResult({id:?}, {running});"
-                        );
-                        proxy_for_web
-                            .send_event(UserEvent::ExecuteScript(script))
-                            .ok();
+                        proxy_for_web.send_event(UserEvent::RestartServer).ok();
+                        let proxy_cb = proxy_for_web.clone();
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(1000));
+                            let running =
+                                crate::stremio_app::stremio_server::is_streaming_server_online();
+                            let script = format!(
+                                "window.__receiveServerStartResult && window.__receiveServerStartResult({id:?}, {running});"
+                            );
+                            proxy_cb.send_event(UserEvent::ExecuteScript(script)).ok();
+                        });
                     }
                     EnhancedAction::LoadUrl { url } => {
                         proxy_for_web.send_event(UserEvent::Navigate(url)).ok();
@@ -419,6 +456,17 @@ pub fn run_macos(
                         proxy_for_web
                             .send_event(UserEvent::ExecuteScript(theme_script))
                             .ok();
+                        let running =
+                            crate::stremio_app::stremio_server::is_streaming_server_online();
+                        let data = mgr.ui_data(running);
+                        if let Ok(json) = serde_json::to_string(&data) {
+                            let script = format!(
+                                "window.__receiveEnhancedData && window.__receiveEnhancedData({json});"
+                            );
+                            proxy_for_web
+                                .send_event(UserEvent::ExecuteScript(script))
+                                .ok();
+                        }
                     }
                     EnhancedAction::Log { level, message } => match level.as_str() {
                         "error" => eprintln!("[Enhanced ERROR] {message}"),
@@ -454,17 +502,74 @@ pub fn run_macos(
                         content,
                     } => {
                         let mut mgr = enhanced_clone.lock().unwrap();
-                        let _ = mgr.install_mod(&mod_type, &file_name, &content);
+                        if let Err(e) = mgr.install_mod(&mod_type, &file_name, &content) {
+                            eprintln!("Failed to install mod {file_name}: {e}");
+                        }
+                        let running =
+                            crate::stremio_app::stremio_server::is_streaming_server_online();
+                        let data = mgr.ui_data(running);
+                        if let Ok(json) = serde_json::to_string(&data) {
+                            let script = format!(
+                                "window.__receiveEnhancedData && window.__receiveEnhancedData({json});"
+                            );
+                            proxy_for_web
+                                .send_event(UserEvent::ExecuteScript(script))
+                                .ok();
+                        }
                     }
-                    EnhancedAction::DeleteMod { mod_type, file_name } => {
+                    EnhancedAction::DeleteMod {
+                        mod_type,
+                        file_name,
+                    } => {
                         let mut mgr = enhanced_clone.lock().unwrap();
-                        let _ = mgr.delete_mod(&mod_type, &file_name);
+                        if let Err(e) = mgr.delete_mod(&mod_type, &file_name) {
+                            eprintln!("Failed to delete mod {file_name}: {e}");
+                        }
+                        let css = mgr.active_theme().map(|t| t.content.clone());
+                        let css_json = serde_json::to_string(&css.unwrap_or_default())
+                            .unwrap_or_else(|_| "\"\"".to_string());
+                        let theme_script = format!(
+                            r##"
+                            (function() {{
+                                try {{
+                                    var s = document.getElementById('activeTheme') || document.createElement('style');
+                                    s.id = 'activeTheme';
+                                    s.textContent = {css_json};
+                                    (document.head || document.documentElement).appendChild(s);
+                                }} catch(e) {{}}
+                            }})();
+                            "##
+                        );
+                        proxy_for_web
+                            .send_event(UserEvent::ExecuteScript(theme_script))
+                            .ok();
+                        let running =
+                            crate::stremio_app::stremio_server::is_streaming_server_online();
+                        let data = mgr.ui_data(running);
+                        if let Ok(json) = serde_json::to_string(&data) {
+                            let script = format!(
+                                "window.__receiveEnhancedData && window.__receiveEnhancedData({json});"
+                            );
+                            proxy_for_web
+                                .send_event(UserEvent::ExecuteScript(script))
+                                .ok();
+                        }
                     }
                     EnhancedAction::PrepareServerUpdate { version } => {
-                        let _ = enhanced_clone.lock().unwrap().prepare_server_update(&version);
+                        proxy_for_web.send_event(UserEvent::StopServer).ok();
+                        if let Err(e) = enhanced_clone
+                            .lock()
+                            .unwrap()
+                            .prepare_server_update(&version)
+                        {
+                            eprintln!("Failed to prepare server update: {e}");
+                        }
                     }
                     EnhancedAction::SkipServerVersion { version } => {
-                        let _ = enhanced_clone.lock().unwrap().skip_server_version(&version);
+                        if let Err(e) = enhanced_clone.lock().unwrap().skip_server_version(&version)
+                        {
+                            eprintln!("Failed to skip server version: {e}");
+                        }
                     }
                     EnhancedAction::DownloadFfmpeg { id } => {
                         let proxy = proxy_for_web.clone();
@@ -484,24 +589,66 @@ pub fn run_macos(
 
             // Check for standard Stremio RPC requests
             if let Ok(msg) = serde_json::from_str::<RPCRequest>(&raw) {
-                let local_server = local_server_url.lock().unwrap().clone();
+                let local_server = local_server_for_rpc.lock().unwrap().clone();
                 match msg.get_method() {
                     None if msg.is_handshake() => {
-                        let resp = RPCResponse::get_handshake(local_server.as_deref());
-                        let resp_json =
-                            serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
-                        let script = format!(
-                            "if (window.qt && window.qt.webChannelTransport && window.qt.webChannelTransport.onmessage) {{ window.qt.webChannelTransport.onmessage({{ data: {resp_json} }}); }}"
-                        );
-                        proxy_for_web
-                            .send_event(UserEvent::ExecuteScript(script))
+                        web_out_rpc
+                            .send(RPCResponse::get_handshake(local_server.as_deref()))
                             .ok();
                     }
                     Some("app-ready") => {
                         println!("[macOS Shell] Web UI reported app-ready.");
+                        web_out_rpc
+                            .send(RPCResponse::visibility_change(true, 1, false))
+                            .ok();
                         open_sender_web
                             .send(crate::stremio_app::open_media::OpenRequest::Ready)
                             .ok();
+                    }
+                    Some("pick-cache-directory") => {
+                        if let Some(request) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<CacheDirectoryRequest>(params.clone()).ok()
+                        }) {
+                            let out_tx = web_out_rpc.clone();
+                            thread::spawn(move || {
+                                let output = Command::new("osascript")
+                                    .args([
+                                        "-e",
+                                        "POSIX path of (choose folder with prompt \"Select Stremio Cache Folder\")",
+                                    ])
+                                    .output();
+                                let res = match output {
+                                    Ok(o) if o.status.success() => {
+                                        let path =
+                                            String::from_utf8_lossy(&o.stdout).trim().to_string();
+                                        if path.is_empty() {
+                                            Ok(None)
+                                        } else {
+                                            Ok(Some(path))
+                                        }
+                                    }
+                                    _ => Ok(None),
+                                };
+                                out_tx
+                                    .send(RPCResponse::cache_directory_selected(
+                                        request.request_id,
+                                        res,
+                                    ))
+                                    .ok();
+                            });
+                        }
+                    }
+                    Some("win-set-interface-scale") => {
+                        if let Some(scale) = msg
+                            .get_params()
+                            .and_then(|params| params.get("scale"))
+                            .and_then(|value| value.as_u64())
+                            .filter(|scale| (75..=175).contains(scale))
+                        {
+                            proxy_for_web
+                                .send_event(UserEvent::SetInterfaceScale(scale))
+                                .ok();
+                        }
                     }
                     Some("win-set-visibility") => {
                         if let Some(fullscreen) = msg
@@ -513,6 +660,9 @@ pub fn run_macos(
                                 .send_event(UserEvent::SetFullscreen(fullscreen))
                                 .ok();
                         }
+                    }
+                    Some("win-focus") => {
+                        proxy_for_web.send_event(UserEvent::FocusWindow).ok();
                     }
                     Some("quit") => {
                         proxy_for_web.send_event(UserEvent::Quit).ok();
@@ -530,10 +680,14 @@ pub fn run_macos(
                         }
                     }
                     Some("discord-connect") => {
-                        let _ = discord_rpc.connect();
+                        if let Err(e) = discord_rpc.connect() {
+                            eprintln!("Discord connect error: {e}");
+                            web_out_rpc.send(RPCResponse::discord_status(false)).ok();
+                        }
                     }
                     Some("discord-disconnect") => {
                         let _ = discord_rpc.disconnect();
+                        web_out_rpc.send(RPCResponse::discord_status(false)).ok();
                     }
                     Some("discord-set-activity") => {
                         if let Some(params) = msg.get_params() {
@@ -563,21 +717,38 @@ pub fn run_macos(
         }
     });
 
-    // Run Tao event loop
-    let webview_for_loop = webview.clone();
+    let webui_url_base = opt.webui_url.clone();
+    let mut current_endpoint = initial_endpoint;
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
             Event::UserEvent(user_event) => match user_event {
                 UserEvent::ExecuteScript(script) => {
-                    if let Ok(wv) = webview_for_loop.lock() {
-                        let _ = wv.evaluate_script(&script);
+                    let _ = webview.evaluate_script(&script);
+                }
+                UserEvent::DispatchWebMessage(msg) => {
+                    if let Ok(escaped) = serde_json::to_string(&msg) {
+                        let js = format!(
+                            "if (window.chrome && window.chrome.webview && window.chrome.webview.__dispatchMessage) {{ window.chrome.webview.__dispatchMessage({escaped}); }}"
+                        );
+                        let _ = webview.evaluate_script(&js);
                     }
                 }
                 UserEvent::Navigate(url) => {
-                    if let Ok(wv) = webview_for_loop.lock() {
-                        let _ = wv.load_url(&url);
+                    let same_base =
+                        current_endpoint.split('#').next() == url.split('#').next();
+                    current_endpoint = url.clone();
+                    if same_base && url.contains('#') {
+                        let fragment = url.split_once('#').map(|(_, h)| h).unwrap_or("");
+                        let js = format!(
+                            "window.location.hash = {}; window.location.reload();",
+                            json!(fragment)
+                        );
+                        let _ = webview.evaluate_script(&js);
+                    } else {
+                        let _ = webview.load_url(&url);
                     }
                 }
                 UserEvent::SetFullscreen(fs) => {
@@ -586,13 +757,71 @@ pub fn run_macos(
                     } else {
                         None
                     });
+                    let visibility = if fs { 3 } else { 1 };
+                    web_out_tx
+                        .send(RPCResponse::visibility_change(true, visibility, fs))
+                        .ok();
+                }
+                UserEvent::SetInterfaceScale(scale) => {
+                    let _ = webview.zoom(scale as f64 / 100.0);
+                }
+                UserEvent::FocusWindow => {
+                    window.set_focus();
+                }
+                UserEvent::PollServerEvents => {
+                    for srv_event in server.events() {
+                        match srv_event {
+                            ServerEvent::Ready(endpoint) => {
+                                println!("[macOS Shell] Streaming server ready at {endpoint}");
+                                *local_server_url.lock().unwrap() = Some(endpoint.clone());
+                                let target_url = if webui_url_base.trim_end_matches('/')
+                                    == WEB_ENDPOINT.trim_end_matches('/')
+                                {
+                                    web_endpoint_with_streaming_server(&endpoint)
+                                } else {
+                                    webui_url_base.clone()
+                                };
+                                let same_base = current_endpoint.split('#').next()
+                                    == target_url.split('#').next();
+                                current_endpoint = target_url.clone();
+                                if same_base && target_url.contains('#') {
+                                    let fragment =
+                                        target_url.split_once('#').map(|(_, h)| h).unwrap_or("");
+                                    let js = format!(
+                                        "window.location.hash = {}; window.location.reload();",
+                                        json!(fragment)
+                                    );
+                                    let _ = webview.evaluate_script(&js);
+                                } else {
+                                    let _ = webview.load_url(&target_url);
+                                }
+                            }
+                            ServerEvent::Failed(err) => {
+                                eprintln!("[macOS Shell] Streaming server failed: {err}");
+                            }
+                        }
+                    }
+                }
+                UserEvent::RestartServer => {
+                    server.restart();
+                }
+                UserEvent::StopServer => {
+                    server.stop();
                 }
                 UserEvent::Quit => {
+                    server.stop();
                     *control_flow = ControlFlow::Exit;
                 }
             },
             Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(_) => unsafe {
+                    macos_gl::update_mpv_layer_scale(window.scale_factor());
+                },
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => unsafe {
+                    macos_gl::update_mpv_layer_scale(scale_factor);
+                },
                 WindowEvent::CloseRequested => {
+                    server.stop();
                     let size = window.inner_size();
                     let settings = WindowSettings {
                         x: 0.0,

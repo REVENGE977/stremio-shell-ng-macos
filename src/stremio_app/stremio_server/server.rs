@@ -1,10 +1,11 @@
 use super::process::{ServerEvent, ServerProcess};
+#[cfg(windows)]
 use crate::stremio_app::constants::STREMIO_SERVER_DEV_MODE;
 #[cfg(windows)]
 use native_windows_gui::{self as nwg, PartialUi};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use std::{env, fs, process::Command, time::Duration};
+use std::{env, fs, path::PathBuf, process::Command, time::Duration};
 #[cfg(windows)]
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
@@ -33,13 +34,24 @@ impl Default for StremioServer {
     }
 }
 
-use std::path::PathBuf;
-
 pub fn server_dir() -> PathBuf {
     let dir = if let Some(cfg) = dirs::config_dir() {
         cfg.join("stremio-enhanced").join("streamingserver")
     } else if let Some(home) = dirs::home_dir() {
-        home.join("AppData").join("Roaming").join("stremio-enhanced").join("streamingserver")
+        #[cfg(target_os = "macos")]
+        {
+            home.join("Library")
+                .join("Application Support")
+                .join("stremio-enhanced")
+                .join("streamingserver")
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            home.join("AppData")
+                .join("Roaming")
+                .join("stremio-enhanced")
+                .join("streamingserver")
+        }
     } else {
         PathBuf::from("streamingserver")
     };
@@ -65,10 +77,23 @@ pub fn ffmpeg_download_url() -> &'static str {
 }
 
 pub fn find_shipped_bin_dir() -> Option<PathBuf> {
+    let (ffmpeg_name, ffprobe_name) = if cfg!(windows) {
+        ("ffmpeg.exe", "ffprobe.exe")
+    } else {
+        ("ffmpeg", "ffprobe")
+    };
+
     if let Ok(mut app_dir) = env::current_exe() {
         app_dir.pop();
-        if app_dir.join("ffmpeg.exe").exists() && app_dir.join("ffprobe.exe").exists() {
+        if app_dir.join(ffmpeg_name).exists() && app_dir.join(ffprobe_name).exists() {
             return Some(app_dir);
+        }
+        if let Some(contents_dir) = app_dir.parent() {
+            let resources_dir = contents_dir.join("Resources");
+            if resources_dir.join(ffmpeg_name).exists() && resources_dir.join(ffprobe_name).exists()
+            {
+                return Some(resources_dir);
+            }
         }
     }
 
@@ -77,8 +102,18 @@ pub fn find_shipped_bin_dir() -> Option<PathBuf> {
     } else {
         PathBuf::from("bin")
     };
-    if dev_bin.join("ffmpeg.exe").exists() && dev_bin.join("ffprobe.exe").exists() {
+    if dev_bin.join(ffmpeg_name).exists() && dev_bin.join(ffprobe_name).exists() {
         return Some(dev_bin);
+    }
+
+    #[cfg(not(windows))]
+    {
+        for sys_dir in ["/opt/local/bin", "/opt/homebrew/bin", "/usr/local/bin"] {
+            let p = PathBuf::from(sys_dir);
+            if p.join("ffmpeg").exists() && p.join("ffprobe").exists() {
+                return Some(p);
+            }
+        }
     }
 
     None
@@ -97,7 +132,8 @@ pub fn is_ffmpeg_installed() -> bool {
         if dir.join("ffmpeg").exists() && dir.join("ffprobe").exists() {
             return true;
         }
-        if std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists()
+        if std::path::Path::new("/opt/local/bin/ffmpeg").exists()
+            || std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists()
             || std::path::Path::new("/usr/local/bin/ffmpeg").exists()
             || Command::new("ffmpeg").arg("-version").output().is_ok()
         {
@@ -143,67 +179,97 @@ pub fn cleanup_ffmpeg_leftovers(dir: &std::path::Path) {
 }
 
 pub fn download_and_extract_ffmpeg() -> Result<(), String> {
-    let dir = server_dir();
-    let _ = fs::create_dir_all(&dir);
-
-    let ffmpeg_exe = dir.join("ffmpeg.exe");
-    let ffprobe_exe = dir.join("ffprobe.exe");
-
-    cleanup_ffmpeg_leftovers(&dir);
-
-    if ffmpeg_exe.exists() && ffprobe_exe.exists() {
-        return Ok(());
+    #[cfg(not(windows))]
+    {
+        if is_ffmpeg_installed() {
+            return Ok(());
+        }
+        return Err(
+            "FFmpeg not found. Please install ffmpeg via MacPorts ('sudo port install ffmpeg') or Homebrew ('brew install ffmpeg')."
+                .to_string(),
+        );
     }
 
-    let url = ffmpeg_download_url();
-    println!("[FFmpeg] Downloading FFmpeg from {url} to {}...", dir.display());
+    #[cfg(windows)]
+    {
+        let dir = server_dir();
+        let _ = fs::create_dir_all(&dir);
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+        let ffmpeg_exe = dir.join("ffmpeg.exe");
+        let ffprobe_exe = dir.join("ffprobe.exe");
 
-    let response = client
-        .get(url)
-        .header("User-Agent", "stremio-shell-ng")
-        .send()
-        .map_err(|e| format!("Failed to download FFmpeg archive: {e}"))?;
+        cleanup_ffmpeg_leftovers(&dir);
 
-    if !response.status().is_success() {
-        return Err(format!("FFmpeg download returned status {}", response.status()));
-    }
+        if ffmpeg_exe.exists() && ffprobe_exe.exists() {
+            return Ok(());
+        }
 
-    let bytes = response.bytes().map_err(|e| format!("Failed to read FFmpeg bytes: {e}"))?;
-    println!("[FFmpeg] Download completed ({} bytes). Extracting binaries...", bytes.len());
+        let url = ffmpeg_download_url();
+        println!(
+            "[FFmpeg] Downloading FFmpeg from {url} to {}...",
+            dir.display()
+        );
 
-    let millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let temp_dir = std::env::temp_dir().join(format!("stremio_ffmpeg_{}_{}", std::process::id(), millis));
-    let _ = fs::create_dir_all(&temp_dir);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
-    let cursor = std::io::Cursor::new(bytes);
-    let extract_result = zip_extract::extract(cursor, &temp_dir, true);
-    if let Err(e) = extract_result {
+        let response = client
+            .get(url)
+            .header("User-Agent", "stremio-shell-ng")
+            .send()
+            .map_err(|e| format!("Failed to download FFmpeg archive: {e}"))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "FFmpeg download returned status {}",
+                response.status()
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| format!("Failed to read FFmpeg bytes: {e}"))?;
+        println!(
+            "[FFmpeg] Download completed ({} bytes). Extracting binaries...",
+            bytes.len()
+        );
+
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "stremio_ffmpeg_{}_{}",
+            std::process::id(),
+            millis
+        ));
+        let _ = fs::create_dir_all(&temp_dir);
+
+        let cursor = std::io::Cursor::new(bytes);
+        let extract_result = zip_extract::extract(cursor, &temp_dir, true);
+        if let Err(e) = extract_result {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(format!("Failed to extract FFmpeg zip: {e}"));
+        }
+
+        find_and_move_binary(&temp_dir, "ffmpeg.exe", &ffmpeg_exe);
+        find_and_move_binary(&temp_dir, "ffprobe.exe", &ffprobe_exe);
+
         let _ = fs::remove_dir_all(&temp_dir);
-        return Err(format!("Failed to extract FFmpeg zip: {e}"));
-    }
+        cleanup_ffmpeg_leftovers(&dir);
 
-    find_and_move_binary(&temp_dir, "ffmpeg.exe", &ffmpeg_exe);
-    find_and_move_binary(&temp_dir, "ffprobe.exe", &ffprobe_exe);
-
-    let _ = fs::remove_dir_all(&temp_dir);
-    cleanup_ffmpeg_leftovers(&dir);
-
-    if ffmpeg_exe.exists() && ffprobe_exe.exists() {
-        println!("[FFmpeg] FFmpeg setup complete: {}", ffmpeg_exe.display());
-        Ok(())
-    } else {
-        Err("Archive did not contain ffmpeg.exe and ffprobe.exe".to_string())
+        if ffmpeg_exe.exists() && ffprobe_exe.exists() {
+            println!("[FFmpeg] FFmpeg setup complete: {}", ffmpeg_exe.display());
+            Ok(())
+        } else {
+            Err("Archive did not contain ffmpeg.exe and ffprobe.exe".to_string())
+        }
     }
 }
 
+#[cfg(windows)]
 fn find_and_move_binary(dir: &std::path::Path, filename: &str, dest: &std::path::Path) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -250,6 +316,12 @@ pub fn find_server_script() -> Option<PathBuf> {
         if app_path.exists() {
             return Some(app_path);
         }
+        if let Some(contents_dir) = path.parent() {
+            let res_path = contents_dir.join("Resources").join("server.js");
+            if res_path.exists() {
+                return Some(res_path);
+            }
+        }
     }
 
     let cwd_path = PathBuf::from("server.js");
@@ -261,12 +333,29 @@ pub fn find_server_script() -> Option<PathBuf> {
 }
 
 pub fn find_runtime_exe() -> Result<PathBuf, String> {
-    let binary_name = if cfg!(windows) { "stremio-runtime.exe" } else { "stremio-runtime" };
+    let binary_name = if cfg!(windows) {
+        "stremio-runtime.exe"
+    } else {
+        "stremio-runtime"
+    };
     if let Ok(mut path) = env::current_exe() {
         path.pop();
         let runtime = path.join(binary_name);
         if runtime.exists() {
             return Ok(runtime);
+        }
+        #[cfg(not(windows))]
+        {
+            let bundled_node = path.join("node");
+            if bundled_node.exists() {
+                return Ok(bundled_node);
+            }
+            if let Some(contents_dir) = path.parent() {
+                let res_node = contents_dir.join("Resources").join("node");
+                if res_node.exists() {
+                    return Ok(res_node);
+                }
+            }
         }
     }
 
@@ -279,6 +368,20 @@ pub fn find_runtime_exe() -> Result<PathBuf, String> {
         return Ok(dev_bin);
     }
 
+    #[cfg(not(windows))]
+    {
+        for candidate in [
+            "/opt/local/bin/node",
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+        ] {
+            let p = PathBuf::from(candidate);
+            if p.exists() {
+                return Ok(p);
+            }
+        }
+    }
+
     Ok(PathBuf::from("node"))
 }
 
@@ -286,7 +389,8 @@ pub fn is_streaming_server_online() -> bool {
     std::net::TcpStream::connect_timeout(
         &"127.0.0.1:11470".parse().unwrap(),
         std::time::Duration::from_millis(150),
-    ).is_ok()
+    )
+    .is_ok()
 }
 
 impl StremioServer {
@@ -306,13 +410,9 @@ impl StremioServer {
             process.stop();
         }
         let sender = self.notice.sender();
-        let process = ServerProcess::new(
-            server_command,
-            STARTUP_TIMEOUT,
-            move || {
-                sender.notice();
-            },
-        );
+        let process = ServerProcess::new(server_command, STARTUP_TIMEOUT, move || {
+            sender.notice();
+        });
         process.start();
         *self.process.borrow_mut() = Some(process);
     }
@@ -323,15 +423,11 @@ impl StremioServer {
             process.stop();
         }
         let notify = self.notify.clone();
-        let process = ServerProcess::new(
-            server_command,
-            STARTUP_TIMEOUT,
-            move || {
-                if let Some(ref cb) = notify {
-                    cb();
-                }
-            },
-        );
+        let process = ServerProcess::new(server_command, STARTUP_TIMEOUT, move || {
+            if let Some(ref cb) = notify {
+                cb();
+            }
+        });
         process.start();
         *self.process.borrow_mut() = Some(process);
     }
@@ -365,10 +461,10 @@ fn server_command() -> Result<Command, String> {
 
     let s_dir = server_dir();
     let mut command = Command::new(runtime);
-    command
-        .arg(&server_js)
-        .current_dir(&s_dir)
-        .creation_flags(CREATE_NO_WINDOW);
+    command.arg(&server_js).current_dir(&s_dir);
+
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
 
     let mut path_entries = vec![s_dir.display().to_string()];
     if let Some(shipped) = find_shipped_bin_dir() {
@@ -378,23 +474,31 @@ fn server_command() -> Result<Command, String> {
             path_entries.push(shipped.display().to_string());
         }
     }
+    #[cfg(not(windows))]
+    {
+        for sys_dir in ["/opt/local/bin", "/opt/homebrew/bin", "/usr/local/bin"] {
+            if std::path::Path::new(sys_dir).exists() {
+                path_entries.push(sys_dir.to_string());
+            }
+        }
+    }
     if let Ok(path_var) = env::var("PATH") {
         path_entries.push(path_var);
     }
-    command.env("PATH", path_entries.join(";"));
+    let path_sep = if cfg!(windows) { ";" } else { ":" };
+    command.env("PATH", path_entries.join(path_sep));
 
     Ok(command)
 }
 
+#[cfg(windows)]
 impl PartialUi for StremioServer {
     fn build_partial<W: Into<nwg::ControlHandle>>(
         data: &mut Self,
         parent: Option<W>,
     ) -> Result<(), nwg::NwgError> {
         let parent = parent.expect("No parent window").into();
-        nwg::Notice::builder()
-            .parent(parent)
-            .build(&mut data.notice)?;
+        nwg::Notice::builder().parent(parent).build(&mut data.notice)?;
 
         if env::var(STREMIO_SERVER_DEV_MODE).as_deref() != Ok("true") {
             let sender = data.notice.sender();
@@ -416,7 +520,8 @@ mod tests {
 
     #[test]
     fn test_cleanup_ffmpeg_leftovers() {
-        let temp = std::env::temp_dir().join(format!("test_ffmpeg_clean_{}", rand::random::<u32>()));
+        let temp =
+            std::env::temp_dir().join(format!("test_ffmpeg_clean_{}", rand::random::<u32>()));
         let _ = fs::create_dir_all(&temp);
         let bin = temp.join("bin");
         let doc = temp.join("doc");

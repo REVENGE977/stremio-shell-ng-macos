@@ -29,6 +29,7 @@ uuid = { version = "1.19", features = ["v4"] }
 dirs = "6"
 
 [target.'cfg(windows)'.dependencies]
+zip-extract = "0.4"
 native-windows-gui = { git = "https://github.com/Stremio/native-windows-gui", features = [
     "high-dpi",
     "notice",
@@ -54,13 +55,13 @@ winapi = { version = "0.3.9", features = [
 webview2 = "0.1.4"
 webview2-sys = "0.1.1"
 winreg = "0.52"
-zip-extract = "0.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tao = "0.30"
-wry = "0.47"
+wry = { version = "0.47", features = ["transparent", "fullscreen", "devtools"] }
 cocoa = "0.26"
 objc = "0.2"
+libc = "0.2"
 
 [build-dependencies]
 chrono = "0.4.22"
