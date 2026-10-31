@@ -1,39 +1,56 @@
-## Stremio new gen enhanced
+# Stremio Enhanced Shell (`stremio-shell-ng`) — macOS Port
 
-### This is a fork of the original Stremio shell project with Stremio Enhanced features added. Stremio Enhanced is an unofficial community fork and is not affiliated with, sponsored by, or endorsed by Smart Code OOD or Stremio.
+This repository contains the macOS port of `stremio-shell-ng` supporting both **Intel Macs (`x86_64-apple-darwin`, including MacPorts environments)** and **Apple Silicon Macs (`aarch64-apple-darwin`)**.
 
-A Windows-only shell using WebView2 and MPV
+## Architecture on macOS
 
-Goals:
-* Performance
-* Reliability
-* Easy to ship
+1. **Embedded MPV Player (`CAOpenGLLayer` + `libmpv` Render API)**:
+   - Uses `libmpv`'s `mpv_render_context` API (`vo=libmpv`, `hwdec=auto`) rendered into a custom `CAOpenGLLayer` (`StremioMpvOpenGLLayer`) attached to an `NSView` positioned directly underneath the `WKWebView` inside `WryWebViewParent`.
+   - Unlike `--wid` (which fails or opens a separate window on MacPorts and modern Homebrew `libmpv` builds), `CAOpenGLLayer` + `MPV_RENDER_API_TYPE_OPENGL` works across **all** MacPorts and Homebrew `mpv` builds on both Intel and Apple Silicon Macs.
+2. **Transparent `WKWebView` Overlay (`tao` + `wry`)**:
+   - Renders the Stremio WebUI and Stremio Enhanced plugins/themes with a transparent background (`wry` `transparent` feature enabled) above the OpenGL video layer.
+   - Provides full `window.qt.webChannelTransport` and `window.chrome.webview` shims on top of `wry`'s native `window.ipc` handler.
+3. **Streaming Server & FFmpeg Discovery**:
+   - Automatically searches MacPorts (`/opt/local/bin`), Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), and `.app` bundle resources for `node`, `ffmpeg`, `ffprobe`, and `server.js`.
 
-In all three, this architecture excels the [Qt-based shell](https://github.com/Stremio/stremio-shell): it is about 2-5x more efficient depending on the use case, as it allows MPV to render directly in the window through it's optimal video output rather than using libmpv to integrate with Qt.
+---
 
-This is due to Qt having a complex rendering pipeline involving ANGLE and multiple levels of composing and drawing to textures, which inhibits full HW acceleration.
+## Building on an Intel Mac with MacPorts (No Homebrew)
 
-Meanwhile in this setup MPV uses whichever pipeline it considers to be optimal (like the mpv desktop app), which is normally d3d11, allowing full HW acceleration.
+1. Ensure **Xcode Command Line Tools**, **MacPorts**, and **Rust** are installed:
+   ```bash
+   xcode-select --install
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+2. Run the MacPorts build script:
+   ```bash
+   chmod +x build-macos-macports.sh
+   ./build-macos-macports.sh
+   ```
+   The script will:
+   - Detect MacPorts in `/opt/local` (or `$MACPORTS_PREFIX` if overridden).
+   - Install `mpv`, `pkgconfig`, and `nodejs` / `npm` via `sudo port install` if not already installed.
+   - Configure linker flags (`-L /opt/local/lib`, `-Wl,-rpath,/opt/local/lib`, `-Wl,-rpath,@executable_path/../Frameworks`).
+   - Build `enhanced.js` and compile the Rust binary for `x86_64-apple-darwin`.
+   - Package `target/release/Stremio Enhanced.app` (including bundling `libmpv*.dylib` into `Contents/Frameworks`).
 
-For web rendering, we use the native WebView2, which is Chromium based but shipped as a part of Windows 10: therefore we do not need to ship our own "distribution" of Chromium.
+---
 
-Finally, this should be a lot more reliable as it uses a much simpler and more native overall architecture.
+## Building with Homebrew (Apple Silicon or Intel)
 
-## Native ASS subtitles
-
-The WebUI handshake advertises `nativeAssSubtitles=true` after the existing GPU
-capability. The player accepts these subtitle commands:
-
-```json
-["mpv-command", ["sub-add", "https://example.com/subtitles.ass", "auto", "English", "eng"]]
-["mpv-command", ["sub-remove", "7"]]
+```bash
+chmod +x build-macos.sh
+./build-macos.sh
 ```
 
-Subtitle loading runs on a dedicated mpv client with one asynchronous command in
-flight. `loadfile` and `stop` cancel and drain subtitle work before changing media.
-Subtitle commands do not reset video readiness. The WebUI matches `track-list`
-titles to the current request before setting `sid`, preventing late loads from
-changing the user's selection.
+---
 
-mpv handles fonts embedded in the media or subtitle file and installed system
-fonts. Subtitles with separate font URLs stay in the WebUI libass renderer.
+## Running the App
+
+```bash
+open "target/release/Stremio Enhanced.app"
+```
+Or run the binary directly from Terminal to see logs:
+```bash
+./target/release/stremio-enhanced-ng
+```
