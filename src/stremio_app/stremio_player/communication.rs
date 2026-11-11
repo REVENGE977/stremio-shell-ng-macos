@@ -16,16 +16,16 @@ impl PlayerProprChange {
     fn value_from_format(data: PropertyData, as_json: bool) -> serde_json::Value {
         match data {
             PropertyData::Flag(d) => serde_json::Value::Bool(d),
-            PropertyData::Int64(d) => serde_json::Value::Number(
-                serde_json::Number::from_f64(d as f64).expect("MPV returned invalid number"),
-            ),
-            PropertyData::Double(d) => serde_json::Value::Number(
-                serde_json::Number::from_f64(d).expect("MPV returned invalid number"),
-            ),
+            PropertyData::Int64(d) => serde_json::Number::from_f64(d as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            PropertyData::Double(d) => serde_json::Number::from_f64(d)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
             PropertyData::OsdStr(s) => serde_json::Value::String(s.to_string()),
             PropertyData::Str(s) => {
                 if as_json {
-                    serde_json::from_str(s).expect("MPV returned invalid JSON data")
+                    serde_json::from_str(s).unwrap_or(serde_json::Value::Null)
                 } else {
                     serde_json::Value::String(s.to_string())
                 }
@@ -303,6 +303,9 @@ impl TryFrom<Vec<serde_json::Value>> for CmdVal {
         match str_command.as_slice() {
             [name] if name == "stop" => Ok(Self::Stop),
             [name, url] if name == "loadfile" => Ok(Self::Loadfile(url.clone())),
+            [name, url, mode] if name == "loadfile" && mode == "replace" => {
+                Ok(Self::Loadfile(url.clone()))
+            }
             [name, url, mode, start]
                 if name == "loadfile" && mode == "replace" && is_safe_start_option(start) =>
             {

@@ -2551,6 +2551,7 @@ Are you sure you want to update? It's recommended to read the source code of the
 
   // src/bridge/transparencyBridge.ts
   var isTransparent = false;
+  var isApplying = false;
   var modifiedElements = /* @__PURE__ */ new Set();
   var observer = null;
   var pollTimer = null;
@@ -2561,62 +2562,58 @@ Are you sure you want to update? It's recommended to read the source code of the
     if (document.querySelector('[class*="video-container"]') !== null) return true;
     return false;
   }
+  function setElementTransparent(el) {
+    if (el.dataset.enhancedTransparent === "1" && el.style.getPropertyValue("background-color") === "transparent") {
+      return;
+    }
+    el.dataset.enhancedTransparent = "1";
+    el.style.setProperty("background", "transparent", "important");
+    el.style.setProperty("background-color", "transparent", "important");
+    modifiedElements.add(el);
+  }
+  function clearElementTransparent(el) {
+    try {
+      delete el.dataset.enhancedTransparent;
+      el.style.removeProperty("background");
+      el.style.removeProperty("background-color");
+    } catch (_) {
+    }
+  }
   function enforceTransparency(force) {
-    const shouldBeTransparent = force !== void 0 ? force : isPlayerRoute();
-    const html = document.documentElement;
-    const body = document.body;
-    const app = document.getElementById("app");
-    const playerContainer = document.querySelector('[class*="player-container"]');
-    if (shouldBeTransparent) {
-      if (!html || !body) return;
-      isTransparent = true;
-      if (html.style.getPropertyValue("background") !== "transparent") {
-        html.style.setProperty("background", "transparent", "important");
-        html.style.setProperty("background-color", "transparent", "important");
-      }
-      modifiedElements.add(html);
-      if (body.style.getPropertyValue("background") !== "transparent") {
-        body.style.setProperty("background", "transparent", "important");
-        body.style.setProperty("background-color", "transparent", "important");
-      }
-      modifiedElements.add(body);
-      if (app && app.style.getPropertyValue("background") !== "transparent") {
-        app.style.setProperty("background", "transparent", "important");
-        app.style.setProperty("background-color", "transparent", "important");
-        modifiedElements.add(app);
-      }
-      if (playerContainer) {
-        if (playerContainer.style.getPropertyValue("background-color") !== "transparent") {
-          playerContainer.style.setProperty("background", "transparent", "important");
-          playerContainer.style.setProperty("background-color", "transparent", "important");
+    if (isApplying) return;
+    isApplying = true;
+    try {
+      const shouldBeTransparent = force !== void 0 ? force : isPlayerRoute();
+      const html = document.documentElement;
+      const body = document.body;
+      const app = document.getElementById("app");
+      const playerContainer = document.querySelector('[class*="player-container"]');
+      if (shouldBeTransparent) {
+        if (!html || !body) return;
+        isTransparent = true;
+        setElementTransparent(html);
+        setElementTransparent(body);
+        if (app) {
+          setElementTransparent(app);
         }
-        modifiedElements.add(playerContainer);
-        let curr = playerContainer.parentElement;
-        while (curr && curr !== body && curr !== html) {
-          if (curr.style.getPropertyValue("background") !== "transparent") {
-            curr.style.setProperty("background", "transparent", "important");
-            curr.style.setProperty("background-color", "transparent", "important");
+        if (playerContainer) {
+          setElementTransparent(playerContainer);
+          let curr = playerContainer.parentElement;
+          while (curr && curr !== body && curr !== html) {
+            setElementTransparent(curr);
+            curr = curr.parentElement;
           }
-          modifiedElements.add(curr);
-          curr = curr.parentElement;
         }
+      } else if (isTransparent) {
+        isTransparent = false;
+        modifiedElements.forEach((el) => clearElementTransparent(el));
+        modifiedElements.clear();
+        if (html) clearElementTransparent(html);
+        if (body) clearElementTransparent(body);
+        if (app) clearElementTransparent(app);
       }
-    } else if (isTransparent) {
-      isTransparent = false;
-      modifiedElements.forEach((el) => {
-        try {
-          el.style.removeProperty("background");
-          el.style.removeProperty("background-color");
-        } catch (_) {
-        }
-      });
-      modifiedElements.clear();
-      html?.style.removeProperty("background");
-      html?.style.removeProperty("background-color");
-      body?.style.removeProperty("background");
-      body?.style.removeProperty("background-color");
-      app?.style.removeProperty("background");
-      app?.style.removeProperty("background-color");
+    } finally {
+      isApplying = false;
     }
   }
   function setupTransparencyBridge() {
@@ -2634,7 +2631,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["class", "style"]
+        attributeFilter: ["class"]
       });
     };
     if (document.documentElement || document.body) {
@@ -2646,6 +2643,8 @@ Are you sure you want to update? It's recommended to read the source code of the
       pollTimer = setInterval(() => {
         if (isPlayerRoute()) {
           enforceTransparency(true);
+        } else if (isTransparent) {
+          enforceTransparency(false);
         }
       }, 300);
     }
@@ -2730,7 +2729,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         const result = origDocQS.call(this, selectors);
         if (!result && bridgeVideo && typeof selectors === "string") {
           if (selectors === "video" || selectors.endsWith(" video") || selectors.includes("player-container") && selectors.includes("video")) {
-            if (document.querySelector('[class*="player-container"]') || window.location.hash.includes("player")) {
+            if (origDocQS.call(document, '[class*="player-container"]') || window.location.hash.includes("player")) {
               return bridgeVideo;
             }
           }
@@ -2994,8 +2993,9 @@ Are you sure you want to update? It's recommended to read the source code of the
     } catch (e) {
       console.warn("[Enhanced] Failed to define bridgeVideo properties:", e);
     }
-    if (window.ipc?.addEventListener) {
-      window.ipc.addEventListener("message", (event) => {
+    const ipcEventTarget = window.chrome?.webview?.addEventListener ? window.chrome.webview : window.ipc?.addEventListener ? window.ipc : null;
+    if (ipcEventTarget) {
+      ipcEventTarget.addEventListener("message", (event) => {
         try {
           let msg = event.data;
           if (typeof msg === "string") {

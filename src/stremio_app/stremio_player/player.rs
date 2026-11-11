@@ -28,12 +28,17 @@ pub mod macos_gl {
     use once_cell::sync::Lazy;
     use std::ffi::{c_void, CString};
     use std::os::raw::{c_char, c_int};
-    use std::sync::atomic::{AtomicPtr, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
     static MPV_HANDLE: AtomicPtr<libmpv2_sys::mpv_handle> = AtomicPtr::new(std::ptr::null_mut());
     static MPV_RENDER_CTX: AtomicPtr<libmpv2_sys::mpv_render_context> =
         AtomicPtr::new(std::ptr::null_mut());
     static MPV_GL_LAYER: AtomicPtr<Object> = AtomicPtr::new(std::ptr::null_mut());
+    static MPV_CGL_PIX: AtomicPtr<libc::c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static MPV_CGL_CTX: AtomicPtr<libc::c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static IS_SOFTWARE_GL: AtomicBool = AtomicBool::new(false);
+    static RENDER_UPDATE_QUEUED: AtomicBool = AtomicBool::new(false);
+    static HAS_PENDING_FRAME: AtomicBool = AtomicBool::new(false);
 
     extern "C" {
         static _dispatch_main_q: libc::c_void;
@@ -47,11 +52,94 @@ pub mod macos_gl {
             pix: *mut *mut libc::c_void,
             npix: *mut i32,
         ) -> i32;
+        fn CGLCreateContext(
+            pix: *mut libc::c_void,
+            share: *mut libc::c_void,
+            ctx: *mut *mut libc::c_void,
+        ) -> i32;
+        fn CGLRetainPixelFormat(pix: *mut libc::c_void) -> *mut libc::c_void;
+        fn CGLRetainContext(ctx: *mut libc::c_void) -> *mut libc::c_void;
+        fn CGLLockContext(ctx: *mut libc::c_void) -> i32;
+        fn CGLUnlockContext(ctx: *mut libc::c_void) -> i32;
+        fn CGLSetCurrentContext(ctx: *mut libc::c_void) -> i32;
+        fn CGLGetCurrentContext() -> *mut libc::c_void;
         fn CGLSetParameter(ctx: *mut libc::c_void, pname: u32, params: *const i32) -> i32;
         fn glGetIntegerv(pname: u32, data: *mut i32);
         fn glClearColor(red: f32, green: f32, blue: f32, alpha: f32);
         fn glClear(mask: u32);
         fn glFlush();
+    }
+
+    pub fn is_software_renderer() -> bool {
+        ensure_cgl_context();
+        IS_SOFTWARE_GL.load(Ordering::Acquire)
+    }
+
+    pub fn ensure_cgl_context() -> (*mut libc::c_void, *mut libc::c_void) {
+        let existing_pix = MPV_CGL_PIX.load(Ordering::Acquire);
+        let existing_ctx = MPV_CGL_CTX.load(Ordering::Acquire);
+        if !existing_pix.is_null() && !existing_ctx.is_null() {
+            return (existing_pix, existing_ctx);
+        }
+
+        const KCGL_PFA_DOUBLE_BUFFER: u32 = 5;
+        const KCGL_PFA_COLOR_SIZE: u32 = 8;
+        const KCGL_PFA_ALPHA_SIZE: u32 = 11;
+        const KCGL_PFA_ACCELERATED: u32 = 73;
+        const KCGL_PFA_ALLOW_OFFLINE_RENDERERS: u32 = 96;
+        const KCGL_PFA_OPENGL_PROFILE: u32 = 99;
+        const KCGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
+
+        let attribs_hw: [u32; 10] = [
+            KCGL_PFA_OPENGL_PROFILE,
+            KCGL_OGLP_VERSION_3_2_CORE,
+            KCGL_PFA_ACCELERATED,
+            KCGL_PFA_DOUBLE_BUFFER,
+            KCGL_PFA_COLOR_SIZE,
+            24,
+            KCGL_PFA_ALPHA_SIZE,
+            8,
+            KCGL_PFA_ALLOW_OFFLINE_RENDERERS,
+            0,
+        ];
+
+        let mut pix: *mut libc::c_void = std::ptr::null_mut();
+        let mut npix: i32 = 0;
+        let err = unsafe { CGLChoosePixelFormat(attribs_hw.as_ptr(), &mut pix, &mut npix) };
+        if err != 0 || pix.is_null() {
+            let attribs_sw: [u32; 8] = [
+                KCGL_PFA_OPENGL_PROFILE,
+                KCGL_OGLP_VERSION_3_2_CORE,
+                KCGL_PFA_DOUBLE_BUFFER,
+                KCGL_PFA_COLOR_SIZE,
+                24,
+                KCGL_PFA_ALPHA_SIZE,
+                8,
+                0,
+            ];
+            let err_sw = unsafe { CGLChoosePixelFormat(attribs_sw.as_ptr(), &mut pix, &mut npix) };
+            if err_sw == 0 && !pix.is_null() {
+                IS_SOFTWARE_GL.store(true, Ordering::Release);
+                println!("[macOS GL] Using Apple Software OpenGL Renderer (VM / no hardware GPU).");
+            }
+        }
+
+        let mut ctx: *mut libc::c_void = std::ptr::null_mut();
+        if !pix.is_null() {
+            let err_ctx = unsafe { CGLCreateContext(pix, std::ptr::null_mut(), &mut ctx) };
+            if err_ctx == 0 && !ctx.is_null() {
+                // Disable blocking VSync wait inside CAOpenGLLayer so main thread never stalls
+                const KCGL_CP_SWAP_INTERVAL: u32 = 222;
+                let swap_interval: i32 = 0;
+                unsafe {
+                    CGLSetParameter(ctx, KCGL_CP_SWAP_INTERVAL, &swap_interval);
+                }
+                MPV_CGL_PIX.store(pix, Ordering::Release);
+                MPV_CGL_CTX.store(ctx, Ordering::Release);
+            }
+        }
+
+        (pix, ctx)
     }
 
     unsafe extern "C" fn get_proc_address(
@@ -77,26 +165,144 @@ pub mod macos_gl {
         unsafe { libc::dlsym(libc::RTLD_DEFAULT, name) }
     }
 
-    unsafe extern "C" fn handle_main_thread_update(_ctx: *mut libc::c_void) {
-        let rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
-        let layer = MPV_GL_LAYER.load(Ordering::Acquire);
-        if !rctx.is_null() && !layer.is_null() {
-            let flags = unsafe { libmpv2_sys::mpv_render_context_update(rctx) };
-            if (flags & (libmpv2_sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64)) != 0 {
-                let _: () = unsafe { msg_send![layer, setNeedsDisplay] };
+    fn ensure_render_context_locked(cgl_ctx: *mut libc::c_void) -> *mut libmpv2_sys::mpv_render_context {
+        let mut rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
+        if !rctx.is_null() {
+            return rctx;
+        }
+        let mpv_handle = MPV_HANDLE.load(Ordering::Acquire);
+        if mpv_handle.is_null() || cgl_ctx.is_null() {
+            return std::ptr::null_mut();
+        }
+
+        let mut init_params = libmpv2_sys::mpv_opengl_init_params {
+            get_proc_address: Some(get_proc_address),
+            get_proc_address_ctx: std::ptr::null_mut(),
+        };
+        let mut adv_control: c_int = 0;
+        let mut params = [
+            libmpv2_sys::mpv_render_param {
+                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
+                data: libmpv2_sys::MPV_RENDER_API_TYPE_OPENGL.as_ptr() as *mut c_void,
+            },
+            libmpv2_sys::mpv_render_param {
+                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
+                data: &mut init_params as *mut _ as *mut c_void,
+            },
+            libmpv2_sys::mpv_render_param {
+                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_ADVANCED_CONTROL,
+                data: &mut adv_control as *mut _ as *mut c_void,
+            },
+            libmpv2_sys::mpv_render_param {
+                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let mut new_rctx: *mut libmpv2_sys::mpv_render_context = std::ptr::null_mut();
+        let err = unsafe {
+            libmpv2_sys::mpv_render_context_create(
+                &mut new_rctx,
+                mpv_handle,
+                params.as_mut_ptr(),
+            )
+        };
+        if err >= 0 && !new_rctx.is_null() {
+            unsafe {
+                libmpv2_sys::mpv_render_context_set_update_callback(
+                    new_rctx,
+                    Some(on_mpv_render_update),
+                    std::ptr::null_mut(),
+                );
             }
-        } else if !layer.is_null() {
-            let _: () = unsafe { msg_send![layer, setNeedsDisplay] };
+            MPV_RENDER_CTX.store(new_rctx, Ordering::Release);
+            rctx = new_rctx;
+        } else {
+            eprintln!("mpv: mpv_render_context_create failed with error {err}");
+        }
+        rctx
+    }
+
+    unsafe extern "C" fn handle_main_thread_update(_ctx: *mut libc::c_void) {
+        RENDER_UPDATE_QUEUED.store(false, Ordering::Release);
+
+        let (_, cgl_ctx) = ensure_cgl_context();
+        let layer = MPV_GL_LAYER.load(Ordering::Acquire);
+        if cgl_ctx.is_null() || layer.is_null() {
+            return;
+        }
+
+        let mut should_draw = false;
+        unsafe {
+            CGLLockContext(cgl_ctx);
+            let prev_ctx = CGLGetCurrentContext();
+            CGLSetCurrentContext(cgl_ctx);
+
+            let rctx = ensure_render_context_locked(cgl_ctx);
+            if !rctx.is_null() {
+                let flags = libmpv2_sys::mpv_render_context_update(rctx);
+                if (flags & (libmpv2_sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64))
+                    != 0
+                {
+                    should_draw = true;
+                }
+            }
+
+            CGLSetCurrentContext(prev_ctx);
+            CGLUnlockContext(cgl_ctx);
+        }
+
+        if should_draw {
+            HAS_PENDING_FRAME.store(true, Ordering::Release);
+            unsafe {
+                let _: () = msg_send![layer, setNeedsDisplay];
+                let _: () = msg_send![layer, displayIfNeeded];
+            }
+
+            // If CoreAnimation skipped drawInCGLContext: (e.g. while mpv_view is occluded behind
+            // the WebUI loading screen before video-ready is emitted), advance the mpv render queue
+            // with SKIP_RENDERING=1 so mpv fires MPV_EVENT_PLAYBACK_RESTART (video-ready: true)
+            // instead of stalling playback initialization.
+            if HAS_PENDING_FRAME.swap(false, Ordering::AcqRel) {
+                unsafe {
+                    CGLLockContext(cgl_ctx);
+                    let prev_ctx = CGLGetCurrentContext();
+                    CGLSetCurrentContext(cgl_ctx);
+                    let rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
+                    if !rctx.is_null() {
+                        let mut skip_rendering: c_int = 1;
+                        let mut block_for_target_time: c_int = 0;
+                        let mut skip_params = [
+                            libmpv2_sys::mpv_render_param {
+                                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_SKIP_RENDERING,
+                                data: &mut skip_rendering as *mut _ as *mut c_void,
+                            },
+                            libmpv2_sys::mpv_render_param {
+                                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                                data: &mut block_for_target_time as *mut _ as *mut c_void,
+                            },
+                            libmpv2_sys::mpv_render_param {
+                                type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                                data: std::ptr::null_mut(),
+                            },
+                        ];
+                        libmpv2_sys::mpv_render_context_render(rctx, skip_params.as_mut_ptr());
+                    }
+                    CGLSetCurrentContext(prev_ctx);
+                    CGLUnlockContext(cgl_ctx);
+                }
+            }
         }
     }
 
     unsafe extern "C" fn on_mpv_render_update(_ctx: *mut c_void) {
-        unsafe {
-            dispatch_async_f(
-                &_dispatch_main_q as *const libc::c_void,
-                std::ptr::null_mut(),
-                handle_main_thread_update,
-            );
+        if !RENDER_UPDATE_QUEUED.swap(true, Ordering::AcqRel) {
+            unsafe {
+                dispatch_async_f(
+                    &_dispatch_main_q as *const libc::c_void,
+                    std::ptr::null_mut(),
+                    handle_main_thread_update,
+                );
+            }
         }
     }
 
@@ -105,48 +311,10 @@ pub mod macos_gl {
         _cmd: Sel,
         mask: u32,
     ) -> *mut libc::c_void {
-        const KCGL_PFA_DOUBLE_BUFFER: u32 = 5;
-        const KCGL_PFA_COLOR_SIZE: u32 = 8;
-        const KCGL_PFA_ALPHA_SIZE: u32 = 11;
-        const KCGL_PFA_ACCELERATED: u32 = 73;
-        const KCGL_PFA_ALLOW_OFFLINE_RENDERERS: u32 = 96;
-        const KCGL_PFA_OPENGL_PROFILE: u32 = 99;
-        const KCGL_OGLP_VERSION_3_2_CORE: u32 = 0x3200;
-
-        let attribs_core: [u32; 10] = [
-            KCGL_PFA_OPENGL_PROFILE,
-            KCGL_OGLP_VERSION_3_2_CORE,
-            KCGL_PFA_ACCELERATED,
-            KCGL_PFA_DOUBLE_BUFFER,
-            KCGL_PFA_COLOR_SIZE,
-            24,
-            KCGL_PFA_ALPHA_SIZE,
-            8,
-            KCGL_PFA_ALLOW_OFFLINE_RENDERERS,
-            0,
-        ];
-        let mut pix: *mut libc::c_void = std::ptr::null_mut();
-        let mut npix: i32 = 0;
-        let err = unsafe { CGLChoosePixelFormat(attribs_core.as_ptr(), &mut pix, &mut npix) };
-        if err == 0 && !pix.is_null() {
-            return pix;
+        let (pix, _) = ensure_cgl_context();
+        if !pix.is_null() {
+            return unsafe { CGLRetainPixelFormat(pix) };
         }
-
-        let attribs_sw: [u32; 8] = [
-            KCGL_PFA_OPENGL_PROFILE,
-            KCGL_OGLP_VERSION_3_2_CORE,
-            KCGL_PFA_DOUBLE_BUFFER,
-            KCGL_PFA_COLOR_SIZE,
-            24,
-            KCGL_PFA_ALPHA_SIZE,
-            8,
-            0,
-        ];
-        let err = unsafe { CGLChoosePixelFormat(attribs_sw.as_ptr(), &mut pix, &mut npix) };
-        if err == 0 && !pix.is_null() {
-            return pix;
-        }
-
         unsafe {
             msg_send![super(this, class!(CAOpenGLLayer)), copyCGLPixelFormatForDisplayMask: mask]
         }
@@ -157,17 +325,13 @@ pub mod macos_gl {
         _cmd: Sel,
         pixel_format: *mut libc::c_void,
     ) -> *mut libc::c_void {
-        let ctx: *mut libc::c_void = unsafe {
-            msg_send![super(this, class!(CAOpenGLLayer)), copyCGLContextForPixelFormat: pixel_format]
-        };
+        let (_, ctx) = ensure_cgl_context();
         if !ctx.is_null() {
-            const KCGL_CP_SWAP_INTERVAL: u32 = 222;
-            let swap_interval: i32 = 1;
-            unsafe {
-                CGLSetParameter(ctx, KCGL_CP_SWAP_INTERVAL, &swap_interval);
-            }
+            return unsafe { CGLRetainContext(ctx) };
         }
-        ctx
+        unsafe {
+            msg_send![super(this, class!(CAOpenGLLayer)), copyCGLContextForPixelFormat: pixel_format]
+        }
     }
 
     extern "C" fn can_draw_in_cgl_context(
@@ -182,59 +346,15 @@ pub mod macos_gl {
     }
 
     extern "C" fn draw_in_cgl_context(
-        this: &Object,
+        _this: &Object,
         _cmd: Sel,
-        _ctx: *mut libc::c_void,
+        ctx: *mut libc::c_void,
         _pf: *mut libc::c_void,
         _time: f64,
         _display_time: *const libc::c_void,
     ) {
-        let mut rctx = MPV_RENDER_CTX.load(Ordering::Acquire);
-        if rctx.is_null() {
-            let mpv_handle = MPV_HANDLE.load(Ordering::Acquire);
-            if !mpv_handle.is_null() {
-                let mut init_params = libmpv2_sys::mpv_opengl_init_params {
-                    get_proc_address: Some(get_proc_address),
-                    get_proc_address_ctx: std::ptr::null_mut(),
-                };
-                let mut params = [
-                    libmpv2_sys::mpv_render_param {
-                        type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
-                        data: libmpv2_sys::MPV_RENDER_API_TYPE_OPENGL.as_ptr() as *mut c_void,
-                    },
-                    libmpv2_sys::mpv_render_param {
-                        type_:
-                            libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
-                        data: &mut init_params as *mut _ as *mut c_void,
-                    },
-                    libmpv2_sys::mpv_render_param {
-                        type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
-                        data: std::ptr::null_mut(),
-                    },
-                ];
-                let mut new_rctx: *mut libmpv2_sys::mpv_render_context = std::ptr::null_mut();
-                let err = unsafe {
-                    libmpv2_sys::mpv_render_context_create(
-                        &mut new_rctx,
-                        mpv_handle,
-                        params.as_mut_ptr(),
-                    )
-                };
-                if err >= 0 && !new_rctx.is_null() {
-                    unsafe {
-                        libmpv2_sys::mpv_render_context_set_update_callback(
-                            new_rctx,
-                            Some(on_mpv_render_update),
-                            this as *const Object as *mut c_void,
-                        );
-                    }
-                    MPV_RENDER_CTX.store(new_rctx, Ordering::Release);
-                    rctx = new_rctx;
-                } else {
-                    eprintln!("mpv: mpv_render_context_create failed with error {err}");
-                }
-            }
-        }
+        HAS_PENDING_FRAME.store(false, Ordering::Release);
+        let rctx = ensure_render_context_locked(ctx);
 
         const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
         const GL_VIEWPORT: u32 = 0x0BA2;
@@ -258,6 +378,7 @@ pub mod macos_gl {
                 internal_format: 0,
             };
             let mut flip_y: c_int = 1;
+            let mut block_for_target_time: c_int = 0;
             let mut render_params = [
                 libmpv2_sys::mpv_render_param {
                     type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
@@ -268,13 +389,16 @@ pub mod macos_gl {
                     data: &mut flip_y as *mut _ as *mut c_void,
                 },
                 libmpv2_sys::mpv_render_param {
+                    type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                    data: &mut block_for_target_time as *mut _ as *mut c_void,
+                },
+                libmpv2_sys::mpv_render_param {
                     type_: libmpv2_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
                     data: std::ptr::null_mut(),
                 },
             ];
             unsafe {
                 libmpv2_sys::mpv_render_context_render(rctx, render_params.as_mut_ptr());
-                libmpv2_sys::mpv_render_context_report_swap(rctx);
                 glFlush();
             }
         } else {
@@ -330,6 +454,7 @@ pub mod macos_gl {
     }
 
     pub unsafe fn create_mpv_opengl_layer(scale_factor: f64) -> *mut Object {
+        ensure_cgl_context();
         let cls = register_layer_class();
         let layer: *mut Object = msg_send![cls, layer];
         let _: () = msg_send![layer, setAsynchronous: NO];
@@ -353,12 +478,19 @@ pub mod macos_gl {
             MPV_GL_LAYER.store(layer_handle as *mut Object, Ordering::Release);
         }
         MPV_HANDLE.store(mpv_handle, Ordering::Release);
-        unsafe {
-            dispatch_async_f(
-                &_dispatch_main_q as *const libc::c_void,
-                std::ptr::null_mut(),
-                handle_main_thread_update,
-            );
+
+        // Initialize mpv_render_context synchronously on the main thread before any
+        // playback or worker threads start, as required by libmpv's render.h contract.
+        let (_, cgl_ctx) = ensure_cgl_context();
+        if !cgl_ctx.is_null() {
+            unsafe {
+                CGLLockContext(cgl_ctx);
+                let prev_ctx = CGLGetCurrentContext();
+                CGLSetCurrentContext(cgl_ctx);
+                let _ = ensure_render_context_locked(cgl_ctx);
+                CGLSetCurrentContext(prev_ctx);
+                CGLUnlockContext(cgl_ctx);
+            }
         }
     }
 }
@@ -662,46 +794,82 @@ impl Player {
 }
 
 fn create_mpv(window_handle: i64) -> Mpv {
+    // Pre-create and inspect our shared CGLContext on the main thread first so
+    // we know whether we are running on Apple's Software OpenGL Renderer (macOS VM)
+    // or a hardware GPU before configuring libmpv options.
+    macos_gl::ensure_cgl_context();
+    let is_software_gl = macos_gl::is_software_renderer();
+
     let mpv = Mpv::with_initializer(|initializer| {
         macro_rules! set_property {
             ($name:literal, $value:expr) => {
-                initializer
-                    .set_property($name, $value)
-                    .expect(concat!("failed to set ", $name));
+                if let Err(error) = initializer.set_property($name, $value) {
+                    eprintln!("mpv: cannot set {}={:?}: {error:?}", $name, $value);
+                }
             };
         }
         set_property!("title", crate::stremio_app::constants::APP_NAME);
         set_property!("audio-client-name", crate::stremio_app::constants::APP_NAME);
         set_property!("terminal", "yes");
         #[cfg(debug_assertions)]
-        set_property!("msg-level", "all=no,cplayer=debug");
+        set_property!("msg-level", "all=no,cplayer=debug,vo=debug");
         #[cfg(not(debug_assertions))]
         set_property!("msg-level", "all=no");
         set_property!("quiet", "yes");
-        set_property!("hwdec", "auto");
         // `%23%` escapes the 23-byte HTTP status list as one mpv option value.
         set_property!(
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=%23%408,429,500,502,503,504,reconnect_delay_max=15"
         );
         set_property!("vo", "libmpv");
+        // Required for embedded CAOpenGLLayer / custom render loop so libmpv
+        // does not stall waiting on external display presentation timestamps.
+        set_property!("video-timing-offset", "0");
+        set_property!("vd-lavc-dr", "no");
 
-        let mut options = vec![
-            ("target-colorspace-hint", "auto"),
-            ("target-colorspace-hint-mode", "target"),
-            ("tone-mapping", "bt.2390"),
-            ("dither-depth", "auto"),
-            ("keep-open", "yes"),
-        ];
-        if gpu_video_processing::unified_memory_architecture() {
-            options.push(("profile", "fast"));
-        } else {
+        let mut options = vec![("keep-open", "yes")];
+
+        if is_software_gl {
+            // Running inside a macOS VM (Apple Software OpenGL Renderer):
+            // 1. Disable VideoToolbox hardware decoding (`hwdec=no`) because
+            //    probing/converting IOSurface textures without a hardware GPU
+            //    either hangs or fails inside virtualized macOS.
+            // 2. Disable heavy multi-pass GLSL shaders (spline36, deband,
+            //    bt.2390 tone-mapping, dithering) that otherwise execute on the
+            //    CPU on the main thread and freeze the UI.
+            set_property!("hwdec", "no");
             options.extend([
-                ("deband", "yes"),
-                ("scale", "spline36"),
-                ("cscale", "spline36"),
+                ("profile", "fast"),
+                ("scale", "bilinear"),
+                ("cscale", "bilinear"),
+                ("dscale", "bilinear"),
+                ("deband", "no"),
+                ("dither", "no"),
+                ("correct-downscaling", "no"),
+                ("linear-downscaling", "no"),
+                ("sigmoid-upscaling", "no"),
+                ("hdr-compute-peak", "no"),
+                ("vd-lavc-threads", "0"),
             ]);
+        } else {
+            set_property!("hwdec", "auto-safe");
+            options.extend([
+                ("target-colorspace-hint", "auto"),
+                ("target-colorspace-hint-mode", "target"),
+                ("tone-mapping", "bt.2390"),
+                ("dither-depth", "auto"),
+            ]);
+            if gpu_video_processing::unified_memory_architecture() {
+                options.push(("profile", "fast"));
+            } else {
+                options.extend([
+                    ("deband", "yes"),
+                    ("scale", "spline36"),
+                    ("cscale", "spline36"),
+                ]);
+            }
         }
+
         for (name, value) in options {
             if let Err(error) = initializer.set_property(name, value) {
                 eprintln!("mpv: cannot set {name}={value}: {error:?}");
@@ -737,6 +905,10 @@ fn create_display_output_thread(
 }
 
 fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, _gpu_video_processing: bool) {
+    if macos_gl::is_software_renderer() {
+        return;
+    }
+
     let color = match state.mode {
         DisplayOutputMode::Auto => [
             ("target-colorspace-hint", "auto"),
@@ -759,17 +931,17 @@ fn create_event_thread(
     video_ready_state: SharedVideoReadyState,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        mpv_event_client
-            .disable_deprecated_events()
-            .expect("failed to disable deprecated MPV events");
+        if let Err(error) = mpv_event_client.disable_deprecated_events() {
+            eprintln!("mpv: failed to disable deprecated events: {error:?}");
+        }
 
         // -- Event handler loop --
 
         loop {
             for ObserveProperty { name, format } in observe_property_receiver.drain() {
-                mpv_event_client
-                    .observe_property(&name, format, 0)
-                    .expect("failed to observer MPV property");
+                if let Err(error) = mpv_event_client.observe_property(&name, format, 0) {
+                    eprintln!("mpv: failed to observe property '{name}': {error:?}");
+                }
             }
 
             let event = match mpv_event_client.wait_event(0.1) {
@@ -838,6 +1010,29 @@ fn create_event_thread(
     })
 }
 
+fn run_mpv_command_async(mpv: &Mpv, name: &str, args: &[&str]) -> Result<(), i32> {
+    let mut c_strings = Vec::with_capacity(args.len() + 1);
+    let Ok(cmd_cstr) = CString::new(name) else {
+        return Err(-1);
+    };
+    c_strings.push(cmd_cstr);
+    for arg in args {
+        let Ok(arg_cstr) = CString::new(*arg) else {
+            return Err(-1);
+        };
+        c_strings.push(arg_cstr);
+    }
+    let mut ptrs: Vec<*const c_char> = c_strings.iter().map(|s| s.as_ptr()).collect();
+    ptrs.push(std::ptr::null());
+
+    let rc = unsafe { libmpv2_sys::mpv_command_async(mpv.ctx.as_ptr(), 0, ptrs.as_mut_ptr()) };
+    if rc < 0 {
+        Err(rc)
+    } else {
+        Ok(())
+    }
+}
+
 fn create_message_thread(
     mpv: Arc<Mpv>,
     window_handle: isize,
@@ -875,14 +1070,14 @@ fn create_message_thread(
                 Err(command) => command,
             };
             let media_transition = cmd.media_transition();
-            let (acknowledge, acknowledged) = flume::bounded(1);
-            if subtitle_request_sender
-                .send(SubtitleWorkerRequest::BeginMediaChange(acknowledge))
-                .is_err()
-                || acknowledged.recv().is_err()
-            {
-                eprintln!("mpv: subtitle worker stopped before media change");
-                return;
+            if media_transition.is_some() {
+                let (acknowledge, acknowledged) = flume::bounded(1);
+                if subtitle_request_sender
+                    .send(SubtitleWorkerRequest::BeginMediaChange(acknowledge))
+                    .is_ok()
+                {
+                    let _ = acknowledged.recv_timeout(Duration::from_millis(250));
+                }
             }
             let parts: Vec<String> = cmd.into();
             if let Some((name, args)) = parts.split_first() {
@@ -894,15 +1089,15 @@ fn create_message_thread(
                     send_video_ready(&rpc_response_sender, load_id, false);
                 }
                 let args = args.iter().map(String::as_str).collect::<Vec<_>>();
-                if let Err(error) = mpv.command(name, &args) {
-                    eprintln!("failed to execute MPV command: '{error:#}'")
+                if let Err(rc) = run_mpv_command_async(&mpv, name, &args) {
+                    eprintln!("failed to execute async MPV command '{name}' (rc={rc}), falling back to sync");
+                    if let Err(error) = mpv.command(name, &args) {
+                        eprintln!("failed to execute MPV command: '{error:#}'");
+                    }
                 }
             }
-            if subtitle_request_sender
-                .send(SubtitleWorkerRequest::EndMediaChange)
-                .is_err()
-            {
-                eprintln!("mpv: subtitle worker stopped after media change");
+            if media_transition.is_some() {
+                let _ = subtitle_request_sender.send(SubtitleWorkerRequest::EndMediaChange);
             }
         };
 

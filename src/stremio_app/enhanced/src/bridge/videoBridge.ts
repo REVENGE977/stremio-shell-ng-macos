@@ -89,7 +89,7 @@ export function setupVideoBridge(): HTMLVideoElement {
             const result = origDocQS.call(this, selectors);
             if (!result && bridgeVideo && typeof selectors === 'string') {
                 if (selectors === 'video' || selectors.endsWith(' video') || (selectors.includes('player-container') && selectors.includes('video'))) {
-                    if (document.querySelector('[class*="player-container"]') || window.location.hash.includes('player')) {
+                    if (origDocQS.call(document, '[class*="player-container"]') || window.location.hash.includes('player')) {
                         return bridgeVideo as unknown as E;
                     }
                 }
@@ -363,9 +363,14 @@ export function setupVideoBridge(): HTMLVideoElement {
         console.warn('[Enhanced] Failed to define bridgeVideo properties:', e);
     }
 
-    // Listen to MPV Property Changes via window.ipc
-    if ((window as any).ipc?.addEventListener) {
-        (window as any).ipc.addEventListener('message', (event: any) => {
+    // Listen to MPV Property Changes via window.chrome.webview or window.ipc
+    const ipcEventTarget = (window as any).chrome?.webview?.addEventListener
+        ? (window as any).chrome.webview
+        : (window as any).ipc?.addEventListener
+        ? (window as any).ipc
+        : null;
+    if (ipcEventTarget) {
+        ipcEventTarget.addEventListener('message', (event: any) => {
             try {
                 let msg = event.data;
                 if (typeof msg === 'string') {
