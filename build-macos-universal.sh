@@ -58,36 +58,26 @@ export RUSTC="$RUSTUP_RUSTC"
 echo "==> Using rustc: $RUSTUP_RUSTC ($("$RUSTUP_RUSTC" --version))"
 echo "==> Using cargo: $RUSTUP_CARGO ($("$RUSTUP_CARGO" --version))"
 
-# 2. Check or install Universal mpv (+universal variant gives both x86_64 and arm64 slices)
+# 2. Check or install mpv
 MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.dylib"
 if [ ! -f "$MPV_LIB" ]; then
     MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.2.dylib"
 fi
 
-IS_UNIVERSAL=false
-if [ -f "$MPV_LIB" ]; then
-    ARCHS=$(lipo -archs "$MPV_LIB" 2>/dev/null || file "$MPV_LIB")
-    echo "==> Existing libmpv architectures: $ARCHS"
-    if [[ "$ARCHS" =~ "x86_64" ]] && [[ "$ARCHS" =~ "arm64" ]]; then
-        IS_UNIVERSAL=true
+if [ ! -f "$MPV_LIB" ]; then
+    echo "==> Installing mpv via MacPorts..."
+    sudo "$PORT_CMD" -N install mpv || true
+    if [ -f "$MACPORTS_PREFIX/lib/libmpv.dylib" ]; then
+        MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.dylib"
+    elif [ -f "$MACPORTS_PREFIX/lib/libmpv.2.dylib" ]; then
+        MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.2.dylib"
     fi
 fi
 
-if [ "$IS_UNIVERSAL" = false ]; then
-    echo "==> Notice: To build for Apple Silicon, libmpv must have an arm64 slice."
-    echo "    Attempting to install 'mpv +universal' via MacPorts..."
-    echo "    (You may be prompted for your sudo password)"
-    sudo "$PORT_CMD" -N install mpv +universal || true
-    
-    # Check again if universal succeeded
+if [ -f "$MPV_LIB" ]; then
     ARCHS=$(lipo -archs "$MPV_LIB" 2>/dev/null || file "$MPV_LIB")
-    echo "==> Detected libmpv architectures after installation: $ARCHS"
-    if [[ "$ARCHS" =~ "arm64" ]]; then
-        IS_UNIVERSAL=true
-    else
-        echo "Warning: libmpv does not currently contain an arm64 slice ($ARCHS)."
-        echo "If linking aarch64 fails, run: sudo port install mpv +universal"
-    fi
+    echo "==> Host libmpv architectures: $ARCHS"
+    echo "    (build.rs will automatically generate a cross-arch link stub for any missing slice)"
 fi
 
 if ! command -v dylibbundler &> /dev/null && [ ! -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
@@ -119,10 +109,6 @@ popd > /dev/null
 # 5. Compile both architectures
 export MPV_LIB_DIR="$MACPORTS_PREFIX/lib"
 export PKG_CONFIG_PATH="$MACPORTS_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-export LIBRARY_PATH="$MACPORTS_PREFIX/lib:${LIBRARY_PATH:-}"
-export DYLD_FALLBACK_LIBRARY_PATH="$MACPORTS_PREFIX/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
-export C_INCLUDE_PATH="$MACPORTS_PREFIX/include:${C_INCLUDE_PATH:-}"
-export RUSTFLAGS="-L native=$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,@executable_path/../Frameworks ${RUSTFLAGS:-}"
 
 echo "==> [1/2] Compiling for Intel (x86_64-apple-darwin)..."
 "$RUSTUP_CARGO" build --release --target x86_64-apple-darwin
