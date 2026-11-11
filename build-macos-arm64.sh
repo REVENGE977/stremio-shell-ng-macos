@@ -8,7 +8,13 @@ echo "=================================================================="
 # Allow overriding MacPorts prefix (defaults to /opt/local)
 MACPORTS_PREFIX="${MACPORTS_PREFIX:-/opt/local}"
 export MACPORTS_PREFIX
-export PATH="$MACPORTS_PREFIX/bin:$MACPORTS_PREFIX/sbin:$PATH"
+# Ensure ~/.cargo/bin takes precedence over MacPorts so rustup's multi-target
+# toolchain is used instead of MacPorts' host-only rust/cargo package.
+if [ -f "$HOME/.cargo/env" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+fi
+export PATH="$HOME/.cargo/bin:$MACPORTS_PREFIX/bin:$MACPORTS_PREFIX/sbin:$PATH"
 
 PORT_BIN="$MACPORTS_PREFIX/bin/port"
 if ! command -v port &> /dev/null && [ ! -x "$PORT_BIN" ]; then
@@ -23,22 +29,36 @@ fi
 
 echo "==> Using MacPorts at: $MACPORTS_PREFIX ($PORT_CMD)"
 
-# 1. Ensure Rust & rustup target for aarch64-apple-darwin
-if ! command -v cargo &> /dev/null; then
+# 1. Ensure rustup & aarch64-apple-darwin target are installed
+# Note: MacPorts' standalone 'rust' port only ships the host stdlib (x86_64)
+# and cannot cross-compile to aarch64-apple-darwin without rustup.
+if ! command -v rustup &> /dev/null; then
+    echo "==> 'rustup' not found (MacPorts rust only includes host stdlib)."
+    echo "==> Installing rustup to provide the aarch64-apple-darwin standard library..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck disable=SC1091
         source "$HOME/.cargo/env"
     fi
-fi
-if ! command -v cargo &> /dev/null; then
-    echo "Error: Rust (cargo) is not installed."
-    exit 1
+    export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-echo "==> Ensuring aarch64-apple-darwin target is installed..."
-if command -v rustup &> /dev/null; then
-    rustup target add aarch64-apple-darwin
+# Ensure a default rustup toolchain is configured
+if ! rustup show active-toolchain &> /dev/null; then
+    echo "==> Installing stable Rust toolchain via rustup..."
+    rustup toolchain install stable
+    rustup default stable
 fi
+
+echo "==> Ensuring aarch64-apple-darwin target is installed via rustup..."
+rustup target add aarch64-apple-darwin
+
+RUSTUP_CARGO="$(rustup which cargo)"
+RUSTUP_RUSTC="$(rustup which rustc)"
+export CARGO="$RUSTUP_CARGO"
+export RUSTC="$RUSTUP_RUSTC"
+echo "==> Using rustc: $RUSTUP_RUSTC ($("$RUSTUP_RUSTC" --version))"
+echo "==> Using cargo: $RUSTUP_CARGO ($("$RUSTUP_CARGO" --version))"
 
 # 2. Check for universal / arm64 libmpv
 MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.dylib"
@@ -93,7 +113,7 @@ export C_INCLUDE_PATH="$MACPORTS_PREFIX/include:${C_INCLUDE_PATH:-}"
 export RUSTFLAGS="-L native=$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,@executable_path/../Frameworks ${RUSTFLAGS:-}"
 
 echo "==> Compiling for aarch64-apple-darwin (Apple Silicon)..."
-cargo build --release --target aarch64-apple-darwin
+"$RUSTUP_CARGO" build --release --target aarch64-apple-darwin
 
 ARM_BIN="target/aarch64-apple-darwin/release/stremio-enhanced-ng"
 if [ ! -f "$ARM_BIN" ]; then

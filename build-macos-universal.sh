@@ -8,7 +8,13 @@ echo "=================================================================="
 # Allow overriding MacPorts prefix (defaults to /opt/local)
 MACPORTS_PREFIX="${MACPORTS_PREFIX:-/opt/local}"
 export MACPORTS_PREFIX
-export PATH="$MACPORTS_PREFIX/bin:$MACPORTS_PREFIX/sbin:$PATH"
+# Ensure ~/.cargo/bin takes precedence over MacPorts so rustup's multi-target
+# toolchain is used instead of MacPorts' host-only rust/cargo package.
+if [ -f "$HOME/.cargo/env" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+fi
+export PATH="$HOME/.cargo/bin:$MACPORTS_PREFIX/bin:$MACPORTS_PREFIX/sbin:$PATH"
 
 PORT_BIN="$MACPORTS_PREFIX/bin/port"
 if ! command -v port &> /dev/null && [ ! -x "$PORT_BIN" ]; then
@@ -23,24 +29,34 @@ fi
 
 echo "==> Using MacPorts at: $MACPORTS_PREFIX ($PORT_CMD)"
 
-# 1. Ensure Rust & rustup targets for both x86_64 and aarch64
-if ! command -v cargo &> /dev/null; then
+# 1. Ensure rustup & targets for both x86_64 and aarch64
+if ! command -v rustup &> /dev/null; then
+    echo "==> 'rustup' not found (MacPorts rust only includes host stdlib)."
+    echo "==> Installing rustup to provide both x86_64 and aarch64 standard libraries..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck disable=SC1091
         source "$HOME/.cargo/env"
     fi
+    export PATH="$HOME/.cargo/bin:$PATH"
 fi
-if ! command -v cargo &> /dev/null; then
-    echo "Error: Rust (cargo) is not installed."
-    echo "Install it via: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-    exit 1
+
+if ! rustup show active-toolchain &> /dev/null; then
+    echo "==> Installing stable Rust toolchain via rustup..."
+    rustup toolchain install stable
+    rustup default stable
 fi
 
 echo "==> Ensuring Rust targets for both architectures..."
-if command -v rustup &> /dev/null; then
-    rustup target add x86_64-apple-darwin
-    rustup target add aarch64-apple-darwin
-fi
+rustup target add x86_64-apple-darwin
+rustup target add aarch64-apple-darwin
+
+RUSTUP_CARGO="$(rustup which cargo)"
+RUSTUP_RUSTC="$(rustup which rustc)"
+export CARGO="$RUSTUP_CARGO"
+export RUSTC="$RUSTUP_RUSTC"
+echo "==> Using rustc: $RUSTUP_RUSTC ($("$RUSTUP_RUSTC" --version))"
+echo "==> Using cargo: $RUSTUP_CARGO ($("$RUSTUP_CARGO" --version))"
 
 # 2. Check or install Universal mpv (+universal variant gives both x86_64 and arm64 slices)
 MPV_LIB="$MACPORTS_PREFIX/lib/libmpv.dylib"
@@ -109,10 +125,10 @@ export C_INCLUDE_PATH="$MACPORTS_PREFIX/include:${C_INCLUDE_PATH:-}"
 export RUSTFLAGS="-L native=$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,$MACPORTS_PREFIX/lib -C link-arg=-Wl,-rpath,@executable_path/../Frameworks ${RUSTFLAGS:-}"
 
 echo "==> [1/2] Compiling for Intel (x86_64-apple-darwin)..."
-cargo build --release --target x86_64-apple-darwin
+"$RUSTUP_CARGO" build --release --target x86_64-apple-darwin
 
 echo "==> [2/2] Compiling for Apple Silicon (aarch64-apple-darwin)..."
-cargo build --release --target aarch64-apple-darwin
+"$RUSTUP_CARGO" build --release --target aarch64-apple-darwin
 
 X86_BIN="target/x86_64-apple-darwin/release/stremio-enhanced-ng"
 ARM_BIN="target/aarch64-apple-darwin/release/stremio-enhanced-ng"
