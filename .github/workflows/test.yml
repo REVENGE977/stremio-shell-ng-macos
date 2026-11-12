@@ -4,28 +4,23 @@ on: [pull_request, push]
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: macos-latest
     steps:
-    # The Windows runners have autocrlf enabled by default
-    # which causes failures for some of rustfmt's line-ending sensitive tests
-    - name: disable git eol translation
-      run: git config --global core.autocrlf false
     - name: checkout
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
+      uses: actions/checkout@v4
     - name: Check version
       run: node stremiover.js check
+    - name: Install macOS dependencies
+      run: brew install mpv pkg-config
     - name: Stable with rustfmt and clippy
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
-        target: x86_64-pc-windows-msvc
         components: rustfmt, clippy
     - name: Lint code format
       run: cargo fmt --all -- --check
     - name: Lint code
-      run: cargo clippy --all -- -D warnings
+      run: cargo clippy --all-targets -- -D warnings
     - name: Test
-      run: cargo test --target x86_64-pc-windows-msvc
+      run: cargo test
 

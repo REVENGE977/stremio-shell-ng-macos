@@ -327,12 +327,8 @@ impl TryFrom<Vec<serde_json::Value>> for CmdVal {
             {
                 Ok(Self::SubRemove(track_id.clone()))
             }
-            [name, time, mode] if name == "seek" => {
-                Ok(Self::Seek(time.clone(), mode.clone()))
-            }
-            [name, time] if name == "seek" => {
-                Ok(Self::Seek(time.clone(), "absolute".to_string()))
-            }
+            [name, time, mode] if name == "seek" => Ok(Self::Seek(time.clone(), mode.clone())),
+            [name, time] if name == "seek" => Ok(Self::Seek(time.clone(), "absolute".to_string())),
             _ => Err("unsupported MPV command".to_string()),
         }
     }

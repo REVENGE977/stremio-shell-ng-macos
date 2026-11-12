@@ -16,6 +16,17 @@ let srcVal = '';
 let videoWidthVal = 1920;
 let videoHeightVal = 1080;
 
+function postMpvIpc(args: unknown[], includeId = false): void {
+    try {
+        const payload = JSON.stringify(includeId ? { id: 1, type: 6, args } : { type: 6, args });
+        if ((window as any).ipc?.postMessage) {
+            (window as any).ipc.postMessage(payload);
+        } else if ((window as any).chrome?.webview?.postMessage) {
+            (window as any).chrome.webview.postMessage(payload);
+        }
+    } catch (_) {}
+}
+
 function createTimeRanges(start: number, end: number) {
     return {
         length: end > start ? 1 : 0,
@@ -135,30 +146,10 @@ export function setupVideoBridge(): HTMLVideoElement {
                 console.log(`[Enhanced BridgeVideo] Seeking to ${targetTime}s`);
 
                 try {
-                    const postIpc = (data: any) => {
-                        const json = typeof data === 'string' ? data : JSON.stringify(data);
-                        if ((window as any).ipc?.postMessage) {
-                            (window as any).ipc.postMessage(json);
-                        } else if ((window as any).chrome?.webview?.postMessage) {
-                            (window as any).chrome.webview.postMessage(json);
-                        }
-                    };
+                    postMpvIpc(["mpv-command", ["seek", String(targetTime), "absolute"]], true);
+                    postMpvIpc(["mpv-set-prop", ["time-pos", targetTime]], true);
 
-                    // 1. mpv-command seek
-                    postIpc({
-                        id: 1,
-                        type: 6,
-                        args: ["mpv-command", ["seek", String(targetTime), "absolute"]]
-                    });
-
-                    // 2. mpv-set-prop time-pos
-                    postIpc({
-                        id: 1,
-                        type: 6,
-                        args: ["mpv-set-prop", ["time-pos", targetTime]]
-                    });
-
-                    // 3. Stremio Core Player Seek
+                    // Stremio Core Player Seek
                     const coreDispatch = (window as any).core?.dispatch || (window as any).PermanentCore?.dispatch;
                     if (typeof coreDispatch === 'function') {
                         coreDispatch({
@@ -204,14 +195,7 @@ export function setupVideoBridge(): HTMLVideoElement {
             },
             set(val: boolean) {
                 pausedVal = Boolean(val);
-                try {
-                    if ((window as any).ipc?.postMessage) {
-                        (window as any).ipc.postMessage(JSON.stringify({
-                            type: 6,
-                            args: ["mpv-set-prop", ["pause", pausedVal]]
-                        }));
-                    }
-                } catch (_) {}
+                postMpvIpc(["mpv-set-prop", ["pause", pausedVal]]);
                 bridgeVideo!.dispatchEvent(new Event(pausedVal ? 'pause' : 'play'));
             },
             configurable: true
@@ -231,14 +215,7 @@ export function setupVideoBridge(): HTMLVideoElement {
             get() { return speedVal; },
             set(val: number) {
                 speedVal = Number(val) || 1;
-                try {
-                    if ((window as any).ipc?.postMessage) {
-                        (window as any).ipc.postMessage(JSON.stringify({
-                            type: 6,
-                            args: ["mpv-set-prop", ["speed", speedVal]]
-                        }));
-                    }
-                } catch (_) {}
+                postMpvIpc(["mpv-set-prop", ["speed", speedVal]]);
                 bridgeVideo!.dispatchEvent(new Event('ratechange'));
             },
             configurable: true
@@ -248,14 +225,7 @@ export function setupVideoBridge(): HTMLVideoElement {
             get() { return volumeVal; },
             set(val: number) {
                 volumeVal = Number(val) || 1;
-                try {
-                    if ((window as any).ipc?.postMessage) {
-                        (window as any).ipc.postMessage(JSON.stringify({
-                            type: 6,
-                            args: ["mpv-set-prop", ["volume", volumeVal * 100]]
-                        }));
-                    }
-                } catch (_) {}
+                postMpvIpc(["mpv-set-prop", ["volume", volumeVal * 100]]);
                 bridgeVideo!.dispatchEvent(new Event('volumechange'));
             },
             configurable: true
@@ -265,14 +235,7 @@ export function setupVideoBridge(): HTMLVideoElement {
             get() { return mutedVal; },
             set(val: boolean) {
                 mutedVal = Boolean(val);
-                try {
-                    if ((window as any).ipc?.postMessage) {
-                        (window as any).ipc.postMessage(JSON.stringify({
-                            type: 6,
-                            args: ["mpv-set-prop", ["mute", mutedVal]]
-                        }));
-                    }
-                } catch (_) {}
+                postMpvIpc(["mpv-set-prop", ["mute", mutedVal]]);
                 bridgeVideo!.dispatchEvent(new Event('volumechange'));
             },
             configurable: true
@@ -341,22 +304,14 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         bridgeVideo.play = function () {
             pausedVal = false;
-            try {
-                if ((window as any).ipc?.postMessage) {
-                    (window as any).ipc.postMessage(JSON.stringify({ type: 6, args: ["mpv-set-prop", ["pause", false]] }));
-                }
-            } catch (_) {}
+            postMpvIpc(["mpv-set-prop", ["pause", false]]);
             bridgeVideo!.dispatchEvent(new Event('play'));
             return Promise.resolve();
         };
 
         bridgeVideo.pause = function () {
             pausedVal = true;
-            try {
-                if ((window as any).ipc?.postMessage) {
-                    (window as any).ipc.postMessage(JSON.stringify({ type: 6, args: ["mpv-set-prop", ["pause", true]] }));
-                }
-            } catch (_) {}
+            postMpvIpc(["mpv-set-prop", ["pause", true]]);
             bridgeVideo!.dispatchEvent(new Event('pause'));
         };
     } catch (e) {

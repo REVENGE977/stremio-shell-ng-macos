@@ -1284,11 +1284,11 @@ OPTION 1: Use server.js directly (Standalone)
 1. Click "Download server.js" (or download from: ${downloadUrl}).
 2. Save the file as "server.js" and place it in:
    ${serverDir}
-   (Click "Open Folder" below to open this directory in Windows Explorer).
+   (Click "Open Folder" below to open this directory in Finder).
    (FFmpeg and FFprobe are already included with the app for video transcoding).
 
 OPTION 2: Use Stremio Service
-If you already have Stremio Service installed, simply start Stremio Service in your Windows system tray so port 11470 is active. You can also download it from the official Stremio website.
+If you already have Stremio Service installed, simply start Stremio Service in your macOS menu bar so port 11470 is active. You can also download it from the official Stremio website.
 
 When ready, click "Done / Check".`,
         ["Open Folder", "Download server.js", "Stremio Service", "Done / Check"]
@@ -2664,6 +2664,17 @@ Are you sure you want to update? It's recommended to read the source code of the
   var srcVal = "";
   var videoWidthVal = 1920;
   var videoHeightVal = 1080;
+  function postMpvIpc(args, includeId = false) {
+    try {
+      const payload = JSON.stringify(includeId ? { id: 1, type: 6, args } : { type: 6, args });
+      if (window.ipc?.postMessage) {
+        window.ipc.postMessage(payload);
+      } else if (window.chrome?.webview?.postMessage) {
+        window.chrome.webview.postMessage(payload);
+      }
+    } catch (_) {
+    }
+  }
   function createTimeRanges(start, end) {
     return {
       length: end > start ? 1 : 0,
@@ -2769,24 +2780,8 @@ Are you sure you want to update? It's recommended to read the source code of the
           currentTimeVal = targetTime;
           console.log(`[Enhanced BridgeVideo] Seeking to ${targetTime}s`);
           try {
-            const postIpc = (data) => {
-              const json = typeof data === "string" ? data : JSON.stringify(data);
-              if (window.ipc?.postMessage) {
-                window.ipc.postMessage(json);
-              } else if (window.chrome?.webview?.postMessage) {
-                window.chrome.webview.postMessage(json);
-              }
-            };
-            postIpc({
-              id: 1,
-              type: 6,
-              args: ["mpv-command", ["seek", String(targetTime), "absolute"]]
-            });
-            postIpc({
-              id: 1,
-              type: 6,
-              args: ["mpv-set-prop", ["time-pos", targetTime]]
-            });
+            postMpvIpc(["mpv-command", ["seek", String(targetTime), "absolute"]], true);
+            postMpvIpc(["mpv-set-prop", ["time-pos", targetTime]], true);
             const coreDispatch = window.core?.dispatch || window.PermanentCore?.dispatch;
             if (typeof coreDispatch === "function") {
               coreDispatch({
@@ -2829,15 +2824,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         },
         set(val) {
           pausedVal = Boolean(val);
-          try {
-            if (window.ipc?.postMessage) {
-              window.ipc.postMessage(JSON.stringify({
-                type: 6,
-                args: ["mpv-set-prop", ["pause", pausedVal]]
-              }));
-            }
-          } catch (_) {
-          }
+          postMpvIpc(["mpv-set-prop", ["pause", pausedVal]]);
           bridgeVideo.dispatchEvent(new Event(pausedVal ? "pause" : "play"));
         },
         configurable: true
@@ -2860,15 +2847,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         },
         set(val) {
           speedVal = Number(val) || 1;
-          try {
-            if (window.ipc?.postMessage) {
-              window.ipc.postMessage(JSON.stringify({
-                type: 6,
-                args: ["mpv-set-prop", ["speed", speedVal]]
-              }));
-            }
-          } catch (_) {
-          }
+          postMpvIpc(["mpv-set-prop", ["speed", speedVal]]);
           bridgeVideo.dispatchEvent(new Event("ratechange"));
         },
         configurable: true
@@ -2879,15 +2858,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         },
         set(val) {
           volumeVal = Number(val) || 1;
-          try {
-            if (window.ipc?.postMessage) {
-              window.ipc.postMessage(JSON.stringify({
-                type: 6,
-                args: ["mpv-set-prop", ["volume", volumeVal * 100]]
-              }));
-            }
-          } catch (_) {
-          }
+          postMpvIpc(["mpv-set-prop", ["volume", volumeVal * 100]]);
           bridgeVideo.dispatchEvent(new Event("volumechange"));
         },
         configurable: true
@@ -2898,15 +2869,7 @@ Are you sure you want to update? It's recommended to read the source code of the
         },
         set(val) {
           mutedVal = Boolean(val);
-          try {
-            if (window.ipc?.postMessage) {
-              window.ipc.postMessage(JSON.stringify({
-                type: 6,
-                args: ["mpv-set-prop", ["mute", mutedVal]]
-              }));
-            }
-          } catch (_) {
-          }
+          postMpvIpc(["mpv-set-prop", ["mute", mutedVal]]);
           bridgeVideo.dispatchEvent(new Event("volumechange"));
         },
         configurable: true
@@ -2971,23 +2934,13 @@ Are you sure you want to update? It's recommended to read the source code of the
       });
       bridgeVideo.play = function() {
         pausedVal = false;
-        try {
-          if (window.ipc?.postMessage) {
-            window.ipc.postMessage(JSON.stringify({ type: 6, args: ["mpv-set-prop", ["pause", false]] }));
-          }
-        } catch (_) {
-        }
+        postMpvIpc(["mpv-set-prop", ["pause", false]]);
         bridgeVideo.dispatchEvent(new Event("play"));
         return Promise.resolve();
       };
       bridgeVideo.pause = function() {
         pausedVal = true;
-        try {
-          if (window.ipc?.postMessage) {
-            window.ipc.postMessage(JSON.stringify({ type: 6, args: ["mpv-set-prop", ["pause", true]] }));
-          }
-        } catch (_) {
-        }
+        postMpvIpc(["mpv-set-prop", ["pause", true]]);
         bridgeVideo.dispatchEvent(new Event("pause"));
       };
     } catch (e) {

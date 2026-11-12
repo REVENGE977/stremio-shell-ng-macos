@@ -5,7 +5,7 @@ This repository contains the macOS port of `stremio-shell-ng` supporting both **
 ## Architecture on macOS
 
 1. **Embedded MPV Player (`CAOpenGLLayer` + `libmpv` Render API)**:
-   - Uses `libmpv`'s `mpv_render_context` API (`vo=libmpv`, `hwdec=auto`) rendered into a custom `CAOpenGLLayer` (`StremioMpvOpenGLLayer`) attached to an `NSView` positioned directly underneath the `WKWebView` inside `WryWebViewParent`.
+   - Uses `libmpv`'s `mpv_render_context` API (`vo=libmpv`, `hwdec=auto-safe`) rendered into a custom `CAOpenGLLayer` (`StremioMpvOpenGLLayer`) attached to an `NSView` positioned directly underneath the `WKWebView` inside `WryWebViewParent`.
    - Unlike `--wid` (which fails or opens a separate window on MacPorts and modern Homebrew `libmpv` builds), `CAOpenGLLayer` + `MPV_RENDER_API_TYPE_OPENGL` works across **all** MacPorts and Homebrew `mpv` builds on both Intel and Apple Silicon Macs.
 2. **Transparent `WKWebView` Overlay (`tao` + `wry`)**:
    - Renders the Stremio WebUI and Stremio Enhanced plugins/themes with a transparent background (`wry` `transparent` feature enabled) above the OpenGL video layer.

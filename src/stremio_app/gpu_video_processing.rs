@@ -1,7 +1,8 @@
-pub fn gpu_video_processing_supported() -> bool {
-    false
-}
+use crate::stremio_app::stremio_player::macos_gl;
 
-pub fn unified_memory_architecture() -> bool {
-    cfg!(target_arch = "aarch64")
+/// Returns `true` when hardware-accelerated OpenGL is active and GPU video
+/// post-processing shaders (e.g. Spline36 upscaling and debanding) can run on
+/// the GPU without stalling playback.
+pub fn gpu_video_processing_supported() -> bool {
+    !macos_gl::is_software_renderer()
 }

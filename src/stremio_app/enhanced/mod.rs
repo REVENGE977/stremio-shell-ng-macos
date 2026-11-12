@@ -57,7 +57,7 @@ where
 }
 
 /// Persistent settings stored in `settings.json`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(
@@ -68,15 +68,6 @@ pub struct Settings {
     pub enabled_plugins: HashMap<String, bool>,
     #[serde(default, alias = "active_theme")]
     pub active_theme: Option<String>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            enabled_plugins: HashMap::new(),
-            active_theme: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -94,7 +85,11 @@ pub struct ServerStatusUiData {
 
 /// Incoming IPC action from the web interface.
 #[derive(Debug, serde::Deserialize)]
-#[serde(tag = "action", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "action",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum EnhancedAction {
     GetData,
     OpenThemesFolder,
@@ -187,7 +182,10 @@ pub fn base_dir() -> PathBuf {
         return cfg.join("stremio-enhanced");
     }
     if let Some(home) = dirs::home_dir() {
-        return home.join("Library").join("Application Support").join("stremio-enhanced");
+        return home
+            .join("Library")
+            .join("Application Support")
+            .join("stremio-enhanced");
     }
     PathBuf::from("stremio-enhanced")
 }
@@ -344,7 +342,8 @@ impl EnhancedManager {
         let server_dir = crate::stremio_app::stremio_server::server_dir();
         let server_path = crate::stremio_app::stremio_server::default_server_path();
         let exists = crate::stremio_app::stremio_server::find_server_script().is_some();
-        let is_running = running || crate::stremio_app::stremio_server::is_streaming_server_online();
+        let is_running =
+            running || crate::stremio_app::stremio_server::is_streaming_server_online();
 
         let current_version_file = server_dir.join("version.txt");
         let current_version = fs::read_to_string(&current_version_file)
@@ -512,7 +511,10 @@ impl EnhancedManager {
                             }
                         });
 
-                        println!("[Enhanced] Loaded plugin: {} ({})", metadata.name, file_name);
+                        println!(
+                            "[Enhanced] Loaded plugin: {} ({})",
+                            metadata.name, file_name
+                        );
 
                         // If this plugin isn't in settings yet, default to disabled
                         self.settings
@@ -526,7 +528,9 @@ impl EnhancedManager {
                             content,
                         });
                     }
-                    Err(e) => eprintln!("[Enhanced] Failed to read plugin file '{}': {e}", file_name),
+                    Err(e) => {
+                        eprintln!("[Enhanced] Failed to read plugin file '{}': {e}", file_name)
+                    }
                 }
             }
         }
@@ -577,7 +581,9 @@ impl EnhancedManager {
                             content,
                         });
                     }
-                    Err(e) => eprintln!("[Enhanced] Failed to read theme file '{}': {e}", file_name),
+                    Err(e) => {
+                        eprintln!("[Enhanced] Failed to read theme file '{}': {e}", file_name)
+                    }
                 }
             }
         }
@@ -620,14 +626,11 @@ impl EnhancedManager {
 
     /// Returns the currently active theme, if any.
     pub fn active_theme(&self) -> Option<&Theme> {
-        self.settings
-            .active_theme
-            .as_ref()
-            .and_then(|active| {
-                self.themes
-                    .iter()
-                    .find(|t| t.file_name.eq_ignore_ascii_case(active))
-            })
+        self.settings.active_theme.as_ref().and_then(|active| {
+            self.themes
+                .iter()
+                .find(|t| t.file_name.eq_ignore_ascii_case(active))
+        })
     }
 }
 
@@ -637,7 +640,9 @@ pub fn open_folder(path: &Path) {
         let _ = fs::create_dir_all(path);
     }
     if let Err(e) = open::that(path) {
-        eprintln!("[Enhanced] Failed to open folder via open::that: {e}, attempting explorer fallback");
+        eprintln!(
+            "[Enhanced] Failed to open folder via open::that: {e}, attempting macOS open fallback"
+        );
         let _ = std::process::Command::new("open").arg(path).spawn();
     }
 }
@@ -713,7 +718,7 @@ mod tests {
         match action {
             EnhancedAction::TogglePlugin { file_name, enabled } => {
                 assert_eq!(file_name, "tidb.plugin.js");
-                assert_eq!(enabled, true);
+                assert!(enabled);
             }
             _ => panic!("Wrong action"),
         }
@@ -730,7 +735,11 @@ mod tests {
         let install = r#"{"action":"installMod","modType":"plugin","fileName":"test.js","content":"console.log(1);"}"#;
         let action: EnhancedAction = serde_json::from_str(install).unwrap();
         match action {
-            EnhancedAction::InstallMod { mod_type, file_name, content } => {
+            EnhancedAction::InstallMod {
+                mod_type,
+                file_name,
+                content,
+            } => {
                 assert_eq!(mod_type, "plugin");
                 assert_eq!(file_name, "test.js");
                 assert_eq!(content, "console.log(1);");
@@ -741,7 +750,10 @@ mod tests {
         let delete = r#"{"action":"deleteMod","modType":"theme","fileName":"dark.css"}"#;
         let action: EnhancedAction = serde_json::from_str(delete).unwrap();
         match action {
-            EnhancedAction::DeleteMod { mod_type, file_name } => {
+            EnhancedAction::DeleteMod {
+                mod_type,
+                file_name,
+            } => {
                 assert_eq!(mod_type, "theme");
                 assert_eq!(file_name, "dark.css");
             }

@@ -122,7 +122,6 @@ mod tests {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum OpenRequest {
     Input(String),

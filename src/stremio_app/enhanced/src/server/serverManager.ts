@@ -236,10 +236,10 @@ export async function showMissingServerInstructions(downloadUrl: string, serverD
             `OPTION 1: Use server.js directly (Standalone)\n` +
             `1. Click "Download server.js" (or download from: ${downloadUrl}).\n` +
             `2. Save the file as "server.js" and place it in:\n   ${serverDir}\n` +
-            `   (Click "Open Folder" below to open this directory in Windows Explorer).\n` +
+            `   (Click "Open Folder" below to open this directory in Finder).\n` +
             `   (FFmpeg and FFprobe are already included with the app for video transcoding).\n\n` +
             `OPTION 2: Use Stremio Service\n` +
-            `If you already have Stremio Service installed, simply start Stremio Service in your Windows system tray so port 11470 is active. You can also download it from the official Stremio website.\n\n` +
+            `If you already have Stremio Service installed, simply start Stremio Service in your macOS menu bar so port 11470 is active. You can also download it from the official Stremio website.\n\n` +
             `When ready, click "Done / Check".`,
             ['Open Folder', 'Download server.js', 'Stremio Service', 'Done / Check']
         );

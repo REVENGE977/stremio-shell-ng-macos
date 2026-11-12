@@ -297,7 +297,10 @@ fn watch_dir_recursively(dir: &Path) {
 
 fn setup_enhanced() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let enhanced_dir = manifest_dir.join("src").join("stremio_app").join("enhanced");
+    let enhanced_dir = manifest_dir
+        .join("src")
+        .join("stremio_app")
+        .join("enhanced");
     let enhanced_src = enhanced_dir.join("src");
     let enhanced_build_js = enhanced_dir.join("build.js");
     let enhanced_package_json = enhanced_dir.join("package.json");
