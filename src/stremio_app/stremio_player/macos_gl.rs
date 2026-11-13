@@ -25,6 +25,8 @@ static RENDER_UPDATE_QUEUED: AtomicBool = AtomicBool::new(false);
 static HAS_PENDING_FRAME: AtomicBool = AtomicBool::new(false);
 static PENDING_FRAME_SEQ: AtomicU64 = AtomicU64::new(0);
 static PLAYBACK_AWAKE_WANTED: AtomicBool = AtomicBool::new(false);
+static WEBUI_AWAKE_WANTED: AtomicBool = AtomicBool::new(false);
+static LAYER_VISIBLE_WANTED: AtomicBool = AtomicBool::new(false);
 static PLAYBACK_ACTIVITY_TOKEN: AtomicPtr<Object> = AtomicPtr::new(std::ptr::null_mut());
 
 const OCCLUSION_WATCHDOG_NS: i64 = 120_000_000;
@@ -345,6 +347,9 @@ unsafe extern "C" fn handle_main_thread_update(_ctx: *mut libc::c_void) {
     CGLUnlockContext(cgl_ctx);
 
     if should_draw {
+        if !LAYER_VISIBLE_WANTED.swap(true, Ordering::AcqRel) {
+            let _: () = msg_send![layer, setHidden: NO];
+        }
         let seq = PENDING_FRAME_SEQ.fetch_add(1, Ordering::AcqRel) + 1;
         HAS_PENDING_FRAME.store(true, Ordering::Release);
 
@@ -577,7 +582,9 @@ pub unsafe fn create_mpv_opengl_layer(scale_factor: f64) -> *mut Object {
     let _: () = msg_send![layer, setAsynchronous: NO];
     let _: () = msg_send![layer, setNeedsDisplayOnBoundsChange: YES];
     let _: () = msg_send![layer, setOpaque: YES];
+    let _: () = msg_send![layer, setHidden: YES];
     let _: () = msg_send![layer, setContentsScale: scale_factor];
+    LAYER_VISIBLE_WANTED.store(false, Ordering::Release);
     MPV_GL_LAYER.store(layer, Ordering::Release);
     layer
 }
@@ -612,7 +619,9 @@ pub fn attach_mpv_handle(mpv_handle: *mut libmpv2_sys::mpv_handle, layer_handle:
 }
 
 pub fn detach_mpv_handle() {
+    set_webui_sleep_inhibited(false);
     set_playback_sleep_inhibited(false);
+    set_layer_visible(false);
     HAS_PENDING_FRAME.store(false, Ordering::Release);
     PENDING_FRAME_SEQ.fetch_add(1, Ordering::AcqRel);
     MPV_HANDLE.store(std::ptr::null_mut(), Ordering::Release);
@@ -641,8 +650,38 @@ pub fn detach_mpv_handle() {
     }
 }
 
+unsafe extern "C" fn sync_layer_visibility_on_main(_ctx: *mut libc::c_void) {
+    let layer = MPV_GL_LAYER.load(Ordering::Acquire);
+    if layer.is_null() {
+        return;
+    }
+    let visible = LAYER_VISIBLE_WANTED.load(Ordering::Acquire);
+    let hidden: BOOL = if visible { NO } else { YES };
+    let _: () = msg_send![layer, setHidden: hidden];
+    if visible {
+        let _: () = msg_send![layer, setNeedsDisplay];
+    }
+}
+
+/// Shows the embedded OpenGL video layer during active playback and hides it when idle
+/// so CoreAnimation does not retain/composite an unused GL backing store while browsing UI.
+pub fn set_layer_visible(visible: bool) {
+    let prev = LAYER_VISIBLE_WANTED.swap(visible, Ordering::AcqRel);
+    if prev == visible {
+        return;
+    }
+    unsafe {
+        dispatch_async_f(
+            &_dispatch_main_q as *const libc::c_void,
+            std::ptr::null_mut(),
+            sync_layer_visibility_on_main,
+        );
+    }
+}
+
 unsafe extern "C" fn sync_playback_activity_on_main(_ctx: *mut libc::c_void) {
-    let wanted = PLAYBACK_AWAKE_WANTED.load(Ordering::Acquire);
+    let wanted =
+        PLAYBACK_AWAKE_WANTED.load(Ordering::Acquire) || WEBUI_AWAKE_WANTED.load(Ordering::Acquire);
     let existing = PLAYBACK_ACTIVITY_TOKEN.load(Ordering::Acquire);
 
     if wanted && existing.is_null() {
@@ -676,9 +715,8 @@ unsafe extern "C" fn sync_playback_activity_on_main(_ctx: *mut libc::c_void) {
     }
 }
 
-/// Prevents macOS App Nap throttling and display sleep while video is actively playing.
-pub fn set_playback_sleep_inhibited(active: bool) {
-    let prev = PLAYBACK_AWAKE_WANTED.swap(active, Ordering::AcqRel);
+fn update_sleep_inhibited(flag: &AtomicBool, active: bool) {
+    let prev = flag.swap(active, Ordering::AcqRel);
     if prev == active {
         return;
     }
@@ -689,4 +727,14 @@ pub fn set_playback_sleep_inhibited(active: bool) {
             sync_playback_activity_on_main,
         );
     }
+}
+
+/// Prevents macOS App Nap throttling and display sleep while video is actively playing.
+pub fn set_playback_sleep_inhibited(active: bool) {
+    update_sleep_inhibited(&PLAYBACK_AWAKE_WANTED, active);
+}
+
+/// Mirrors WebUI `screensaver-toggle` / `set-window-mode` requests cleanly alongside playback state.
+pub fn set_webui_sleep_inhibited(active: bool) {
+    update_sleep_inhibited(&WEBUI_AWAKE_WANTED, active);
 }

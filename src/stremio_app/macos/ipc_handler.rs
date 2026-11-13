@@ -255,6 +255,22 @@ fn handle_rpc_request(msg: RPCRequest, ctx: &IpcContext) {
         Some("win-focus") => {
             ctx.proxy.send_event(UserEvent::FocusWindow).ok();
         }
+        Some("screensaver-toggle") => {
+            if let Some(disabled) = msg
+                .get_params()
+                .and_then(|params| params.get("disabled"))
+                .and_then(|v| v.as_bool())
+            {
+                crate::stremio_app::stremio_player::macos_gl::set_webui_sleep_inhibited(disabled);
+            }
+        }
+        Some("set-window-mode") => {
+            if let Some(mode) = msg.get_params().and_then(|v| v.as_str()) {
+                crate::stremio_app::stremio_player::macos_gl::set_webui_sleep_inhibited(
+                    mode == "player",
+                );
+            }
+        }
         Some("quit") => {
             ctx.proxy.send_event(UserEvent::Quit).ok();
         }

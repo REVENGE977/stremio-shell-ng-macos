@@ -88,6 +88,12 @@ impl Drop for Player {
 }
 
 fn create_mpv(window_handle: i64) -> Mpv {
+    // libmpv requires LC_NUMERIC="C" (matching Qt/stremio-shell) so decimal parsing
+    // never breaks on non-English macOS system locales.
+    unsafe {
+        libc::setlocale(libc::LC_NUMERIC, c"C".as_ptr());
+    }
+
     // Initialize the shared CGLContext on the main thread first so we know
     // whether we are running on a hardware GPU or Apple's Software Renderer
     // before setting libmpv decoder and shader options.
@@ -117,6 +123,11 @@ fn create_mpv(window_handle: i64) -> Mpv {
 
         // Embedded CoreAnimation OpenGL render loop (`vo=libmpv`).
         set_opt!("vo", "libmpv");
+        set_opt!(
+            "gpu-hwdec-interop",
+            if is_software_gl { "no" } else { "auto" }
+        );
+        set_opt!("audio-fallback-to-null", "yes");
         set_opt!("video-timing-offset", "0");
         set_opt!("video-sync", "audio");
         set_opt!("hr-seek-framedrop", "yes");
@@ -271,6 +282,7 @@ fn create_event_thread(
             };
 
             if matches!(&event, Event::StartFile) {
+                macos_gl::set_layer_visible(true);
                 video_ready_state
                     .lock()
                     .expect("cannot lock video readiness state")
@@ -290,6 +302,7 @@ fn create_event_thread(
                 let paused = mpv_event_client
                     .get_property::<bool>("pause")
                     .unwrap_or(false);
+                macos_gl::set_layer_visible(true);
                 macos_gl::set_playback_sleep_inhibited(!paused);
                 if let Ok(hwdec_active) = mpv_event_client.get_property::<String>("hwdec-current") {
                     println!("[MPV] Playback started (hwdec-current: {hwdec_active})");
@@ -321,6 +334,7 @@ fn create_event_thread(
                 }
                 Event::EndFile(reason) => {
                     macos_gl::set_playback_sleep_inhibited(false);
+                    macos_gl::set_layer_visible(false);
                     PlayerResponse(
                         "mpv-event-ended",
                         PlayerEvent::End(PlayerEnded::from_end_reason(reason)),
@@ -328,6 +342,7 @@ fn create_event_thread(
                 }
                 Event::Shutdown => {
                     macos_gl::set_playback_sleep_inhibited(false);
+                    macos_gl::set_layer_visible(false);
                     break;
                 }
                 _ => continue,
