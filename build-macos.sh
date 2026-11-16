@@ -24,6 +24,12 @@ if ! brew list mpv &> /dev/null; then
     brew install mpv
 fi
 
+# Check for dylibbundler so Frameworks/ receives a complete standalone dependency tree
+if ! command -v dylibbundler &> /dev/null; then
+    echo "==> Installing dylibbundler via Homebrew for standalone .app packaging..."
+    brew install dylibbundler || true
+fi
+
 # Check for Node.js
 if ! command -v node &> /dev/null; then
     echo "==> Installing node via Homebrew..."

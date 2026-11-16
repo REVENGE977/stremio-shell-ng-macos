@@ -18,8 +18,13 @@ export PATH="$HOME/.cargo/bin:$MACPORTS_PREFIX/bin:$MACPORTS_PREFIX/sbin:$PATH"
 
 PORT_BIN="$MACPORTS_PREFIX/bin/port"
 if ! command -v port &> /dev/null && [ ! -x "$PORT_BIN" ]; then
+    if [ "$(uname -m)" = "arm64" ] && command -v brew &> /dev/null; then
+        echo "==> MacPorts not found, but Homebrew on Apple Silicon was detected. Delegating to build-macos.sh..."
+        exec "$(dirname "$0")/build-macos.sh" "$@"
+    fi
     echo "Error: MacPorts ('port') was not found at $PORT_BIN or in PATH."
     echo "Please install MacPorts from https://www.macports.org/install.php"
+    echo "(On Apple Silicon Macs with Homebrew, run ./build-macos.sh directly.)"
     exit 1
 fi
 PORT_CMD="${PORT_BIN}"
@@ -82,16 +87,23 @@ if [ -f "$MPV_LIB" ]; then
     echo "==> Host libmpv architectures: $ARCHS"
     if [[ "$ARCHS" =~ "arm64" ]]; then
         HAS_ARM64_MPV=true
-    else
-        echo "==> Host libmpv is $ARCHS-only; build.rs will generate an arm64 @rpath/libmpv.2.dylib link stub."
     fi
 fi
 
-if [ "$HAS_ARM64_MPV" = true ]; then
-    if ! command -v dylibbundler &> /dev/null && [ ! -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
-        echo "==> Installing dylibbundler via MacPorts..."
-        sudo "$PORT_CMD" -N install dylibbundler || true
-    fi
+if ! command -v python3 &> /dev/null; then
+    echo "==> Installing python3 via MacPorts..."
+    sudo "$PORT_CMD" -N install python312 || true
+fi
+
+ARM64_STAGE_DIR=""
+if [ "$HAS_ARM64_MPV" != true ]; then
+    echo "==> Staging prebuilt Apple Silicon (arm64) libmpv & runtime dependencies..."
+    ARM64_STAGE_DIR="$(pwd)/target/arm64-macports-stage"
+    ARM64_CACHE_DIR="$(pwd)/target/arm64-macports-cache"
+    python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" stage-arm64 \
+        --macports-prefix "$MACPORTS_PREFIX" \
+        --stage-dir "$ARM64_STAGE_DIR" \
+        --cache-dir "$ARM64_CACHE_DIR"
 fi
 
 # 3. Ensure Node.js & npm are installed
@@ -116,12 +128,17 @@ fi
 popd > /dev/null
 
 # 5. Compile for aarch64-apple-darwin
-export MPV_LIB_DIR="$MACPORTS_PREFIX/lib"
-export PKG_CONFIG_PATH="$MACPORTS_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 if [ "$HAS_ARM64_MPV" = true ]; then
+    export MPV_LIB_DIR="$MACPORTS_PREFIX/lib"
+    export PKG_CONFIG_PATH="$MACPORTS_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
     export LIBRARY_PATH="$MACPORTS_PREFIX/lib:${LIBRARY_PATH:-}"
     export DYLD_FALLBACK_LIBRARY_PATH="$MACPORTS_PREFIX/lib:${DYLD_FALLBACK_LIBRARY_PATH:-}"
     export C_INCLUDE_PATH="$MACPORTS_PREFIX/include:${C_INCLUDE_PATH:-}"
+else
+    export MPV_LIB_DIR="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib"
+    export PKG_CONFIG_PATH="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib/pkgconfig"
+    export LIBRARY_PATH="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib"
+    export C_INCLUDE_PATH="$ARM64_STAGE_DIR$MACPORTS_PREFIX/include:${C_INCLUDE_PATH:-}"
 fi
 
 echo "==> Compiling for aarch64-apple-darwin (Apple Silicon)..."
@@ -151,93 +168,18 @@ chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 echo "==> Binary arch verification:"
 file "$MACOS_DIR/stremio-enhanced-ng"
 
-# 7. Bundle Node.js runtime into Contents/Resources
-NODE_BIN="$(command -v node || true)"
-if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]; then
-    echo "==> Bundling Node runtime ($NODE_BIN)..."
-    cp -L "$NODE_BIN" "$RESOURCES_DIR/node"
-    chmod +x "$RESOURCES_DIR/node"
-fi
-
-FFMPEG_BIN="$(command -v ffmpeg || true)"
-if [ -z "$FFMPEG_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffmpeg" ]; then
-    FFMPEG_BIN="$MACPORTS_PREFIX/bin/ffmpeg"
-fi
-if [ -n "$FFMPEG_BIN" ] && [ -x "$FFMPEG_BIN" ]; then
-    echo "==> Bundling ffmpeg ($FFMPEG_BIN)..."
-    cp -L "$FFMPEG_BIN" "$RESOURCES_DIR/ffmpeg"
-    chmod +x "$RESOURCES_DIR/ffmpeg"
-fi
-
-FFPROBE_BIN="$(command -v ffprobe || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffprobe" ]; then
-    FFPROBE_BIN="$MACPORTS_PREFIX/bin/ffprobe"
-fi
-if [ -n "$FFPROBE_BIN" ] && [ -x "$FFPROBE_BIN" ]; then
-    echo "==> Bundling ffprobe ($FFPROBE_BIN)..."
-    cp -L "$FFPROBE_BIN" "$RESOURCES_DIR/ffprobe"
-    chmod +x "$RESOURCES_DIR/ffprobe"
-fi
-
+# 7. Bundle Node.js/FFmpeg resources + arm64 dynamic dependencies into Frameworks/
 if [ -f "server.js" ]; then
     cp "server.js" "$RESOURCES_DIR/server.js"
 fi
 
-# 8. Bundle dynamic dependencies (if host has arm64 / universal dylibs)
-if [ "$HAS_ARM64_MPV" = true ]; then
-    echo "==> Bundling arm64 dynamic dependencies into $FRAMEWORKS_DIR..."
-    BUNDLER_CMD="$(command -v dylibbundler || true)"
-    if [ -z "$BUNDLER_CMD" ] && [ -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
-        BUNDLER_CMD="$MACPORTS_PREFIX/bin/dylibbundler"
-    fi
-
-    for dylib in "$MACPORTS_PREFIX"/lib/libmpv*.dylib; do
-        if [ -e "$dylib" ]; then
-            cp -L "$dylib" "$FRAMEWORKS_DIR/"
-        fi
-    done
-
-    if [ -n "$BUNDLER_CMD" ] && [ -x "$BUNDLER_CMD" ]; then
-        "$BUNDLER_CMD" -b \
-            -x "$MACOS_DIR/stremio-enhanced-ng" \
-            -d "$FRAMEWORKS_DIR" \
-            -p "@executable_path/../Frameworks" \
-            -s "$MACPORTS_PREFIX/lib" \
-            -of || true
-    else
-        bundle_dylibs() {
-            local target="$1"
-            otool -L "$target" | awk 'NR>1 {print $1}' | while read -r dep; do
-                case "$dep" in
-                    "$MACPORTS_PREFIX"/*|/usr/local/*|/opt/homebrew/*)
-                        local base
-                        base="$(basename "$dep")"
-                        if [ ! -f "$FRAMEWORKS_DIR/$base" ] && [ -f "$dep" ]; then
-                            cp -L "$dep" "$FRAMEWORKS_DIR/$base"
-                            chmod 755 "$FRAMEWORKS_DIR/$base"
-                            install_name_tool -id "@executable_path/../Frameworks/$base" "$FRAMEWORKS_DIR/$base" 2>/dev/null || true
-                            bundle_dylibs "$FRAMEWORKS_DIR/$base"
-                        fi
-                        install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$target" 2>/dev/null || true
-                        ;;
-                esac
-            done
-        }
-        bundle_dylibs "$MACOS_DIR/stremio-enhanced-ng"
-        for fw in "$FRAMEWORKS_DIR"/*.dylib; do
-            if [ -f "$fw" ]; then
-                bundle_dylibs "$fw"
-            fi
-        done
-    fi
-else
-    echo "==> Skipping x86_64-only dylib bundling for ARM64 target."
-    echo "    Binary is linked with @rpath/libmpv.2.dylib (searches Frameworks/, /opt/homebrew/lib, /opt/local/lib)."
-fi
-
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
-install_name_tool -add_rpath "/opt/homebrew/lib" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
-install_name_tool -add_rpath "/opt/local/lib" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
+echo "==> Packaging arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$MACPORTS_PREFIX" \
+    --arm64-stage "$ARM64_STAGE_DIR" \
+    --mode arm64 \
+    --stage-resources
 
 # 9. App icon generation
 if [ -f "images/stremio.png" ]; then
@@ -292,12 +234,11 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </plist>
 EOF
 
-if command -v codesign &> /dev/null; then
-    codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
-fi
+codesign --force --deep --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
 
 echo "=================================================================="
 echo "Apple Silicon (ARM64) build succeeded!"
-echo "App bundle created at: $APP_DIR"
+echo "Standalone verified .app bundle created at: $APP_DIR"
 echo "=================================================================="
 

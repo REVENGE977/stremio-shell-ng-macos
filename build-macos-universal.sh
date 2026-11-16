@@ -74,15 +74,29 @@ if [ ! -f "$MPV_LIB" ]; then
     fi
 fi
 
+HAS_ARM64_MPV=false
 if [ -f "$MPV_LIB" ]; then
     ARCHS=$(lipo -archs "$MPV_LIB" 2>/dev/null || file "$MPV_LIB")
     echo "==> Host libmpv architectures: $ARCHS"
-    echo "    (build.rs will automatically generate a cross-arch link stub for any missing slice)"
+    if [[ "$ARCHS" =~ "arm64" ]]; then
+        HAS_ARM64_MPV=true
+    fi
 fi
 
-if ! command -v dylibbundler &> /dev/null && [ ! -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
-    echo "==> Installing dylibbundler via MacPorts..."
-    sudo "$PORT_CMD" -N install dylibbundler || true
+if ! command -v python3 &> /dev/null; then
+    echo "==> Installing python3 via MacPorts..."
+    sudo "$PORT_CMD" -N install python312 || true
+fi
+
+ARM64_STAGE_DIR=""
+if [ "$HAS_ARM64_MPV" != true ]; then
+    echo "==> Staging prebuilt Apple Silicon (arm64) libmpv & runtime dependencies for Universal bundling..."
+    ARM64_STAGE_DIR="$(pwd)/target/arm64-macports-stage"
+    ARM64_CACHE_DIR="$(pwd)/target/arm64-macports-cache"
+    python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" stage-arm64 \
+        --macports-prefix "$MACPORTS_PREFIX" \
+        --stage-dir "$ARM64_STAGE_DIR" \
+        --cache-dir "$ARM64_CACHE_DIR"
 fi
 
 # 3. Ensure Node.js & npm are installed
@@ -114,7 +128,14 @@ echo "==> [1/2] Compiling for Intel (x86_64-apple-darwin)..."
 "$RUSTUP_CARGO" build --release --target x86_64-apple-darwin
 
 echo "==> [2/2] Compiling for Apple Silicon (aarch64-apple-darwin)..."
-"$RUSTUP_CARGO" build --release --target aarch64-apple-darwin
+if [ "$HAS_ARM64_MPV" = true ]; then
+    "$RUSTUP_CARGO" build --release --target aarch64-apple-darwin
+else
+    MPV_LIB_DIR="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib" \
+    PKG_CONFIG_PATH="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib/pkgconfig" \
+    LIBRARY_PATH="$ARM64_STAGE_DIR$MACPORTS_PREFIX/lib" \
+    "$RUSTUP_CARGO" build --release --target aarch64-apple-darwin
+fi
 
 X86_BIN="target/x86_64-apple-darwin/release/stremio-enhanced-ng"
 ARM_BIN="target/aarch64-apple-darwin/release/stremio-enhanced-ng"
@@ -142,89 +163,18 @@ chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 echo "==> Verified Universal executable slices:"
 lipo -info "$MACOS_DIR/stremio-enhanced-ng"
 
-# 7. Bundle Node.js runtime into Contents/Resources
-NODE_BIN="$(command -v node || true)"
-if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]; then
-    echo "==> Bundling Node runtime ($NODE_BIN)..."
-    cp -L "$NODE_BIN" "$RESOURCES_DIR/node"
-    chmod +x "$RESOURCES_DIR/node"
-fi
-
-# Bundle ffmpeg / ffprobe if available
-FFMPEG_BIN="$(command -v ffmpeg || true)"
-if [ -z "$FFMPEG_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffmpeg" ]; then
-    FFMPEG_BIN="$MACPORTS_PREFIX/bin/ffmpeg"
-fi
-if [ -n "$FFMPEG_BIN" ] && [ -x "$FFMPEG_BIN" ]; then
-    echo "==> Bundling ffmpeg ($FFMPEG_BIN)..."
-    cp -L "$FFMPEG_BIN" "$RESOURCES_DIR/ffmpeg"
-    chmod +x "$RESOURCES_DIR/ffmpeg"
-fi
-
-FFPROBE_BIN="$(command -v ffprobe || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffprobe" ]; then
-    FFPROBE_BIN="$MACPORTS_PREFIX/bin/ffprobe"
-fi
-if [ -n "$FFPROBE_BIN" ] && [ -x "$FFPROBE_BIN" ]; then
-    echo "==> Bundling ffprobe ($FFPROBE_BIN)..."
-    cp -L "$FFPROBE_BIN" "$RESOURCES_DIR/ffprobe"
-    chmod +x "$RESOURCES_DIR/ffprobe"
-fi
-
+# 7. Bundle Universal Node/FFmpeg resources & merged x86_64+arm64 Frameworks/
 if [ -f "server.js" ]; then
     cp "server.js" "$RESOURCES_DIR/server.js"
 fi
 
-# 8. Bundle and rewrite dynamic libraries
-echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
-BUNDLER_CMD="$(command -v dylibbundler || true)"
-if [ -z "$BUNDLER_CMD" ] && [ -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
-    BUNDLER_CMD="$MACPORTS_PREFIX/bin/dylibbundler"
-fi
-
-for dylib in "$MACPORTS_PREFIX"/lib/libmpv*.dylib; do
-    if [ -e "$dylib" ]; then
-        cp -L "$dylib" "$FRAMEWORKS_DIR/"
-    fi
-done
-
-if [ -n "$BUNDLER_CMD" ] && [ -x "$BUNDLER_CMD" ]; then
-    echo "==> Resolving recursive dylib tree via dylibbundler..."
-    "$BUNDLER_CMD" -b \
-        -x "$MACOS_DIR/stremio-enhanced-ng" \
-        -d "$FRAMEWORKS_DIR" \
-        -p "@executable_path/../Frameworks" \
-        -s "$MACPORTS_PREFIX/lib" \
-        -of || true
-else
-    echo "==> Resolving dependencies recursively using otool/install_name_tool..."
-    bundle_dylibs() {
-        local target="$1"
-        otool -L "$target" | awk 'NR>1 {print $1}' | while read -r dep; do
-            case "$dep" in
-                "$MACPORTS_PREFIX"/*|/usr/local/*|/opt/homebrew/*)
-                    local base
-                    base="$(basename "$dep")"
-                    if [ ! -f "$FRAMEWORKS_DIR/$base" ] && [ -f "$dep" ]; then
-                        cp -L "$dep" "$FRAMEWORKS_DIR/$base"
-                        chmod 755 "$FRAMEWORKS_DIR/$base"
-                        install_name_tool -id "@executable_path/../Frameworks/$base" "$FRAMEWORKS_DIR/$base" 2>/dev/null || true
-                        bundle_dylibs "$FRAMEWORKS_DIR/$base"
-                    fi
-                    install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$target" 2>/dev/null || true
-                    ;;
-            esac
-        done
-    }
-    bundle_dylibs "$MACOS_DIR/stremio-enhanced-ng"
-    for fw in "$FRAMEWORKS_DIR"/*.dylib; do
-        if [ -f "$fw" ]; then
-            bundle_dylibs "$fw"
-        fi
-    done
-fi
-
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
+echo "==> Merging and verifying Universal dynamic dependencies in $FRAMEWORKS_DIR..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$MACPORTS_PREFIX" \
+    --arm64-stage "$ARM64_STAGE_DIR" \
+    --mode universal \
+    --stage-resources
 
 # 9. App icon generation
 if [ -f "images/stremio.png" ]; then
@@ -279,10 +229,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </plist>
 EOF
 
-# 11. Ad-hoc codesign
-if command -v codesign &> /dev/null; then
-    codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
-fi
+# 11. Ad-hoc codesign & verify
+codesign --force --deep --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
 
 echo "=================================================================="
 echo "Universal build succeeded!"
