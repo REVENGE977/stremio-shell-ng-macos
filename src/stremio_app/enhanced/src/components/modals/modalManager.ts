@@ -114,12 +114,12 @@ export const modalManager = {
         const label = setting.title || (setting as any).label || setting.key;
 
         return `
-        <div class="option-vFOAS" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
-            <div class="heading-dYMDt" style="flex: 1; padding-right: 20px; min-width: 0;">
-                <div class="label-qI6Vh" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
+        <div class="enhanced-option" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
+            <div class="enhanced-option-heading" style="flex: 1; padding-right: 20px; min-width: 0;">
+                <div class="enhanced-option-label" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
                 ${setting.description ? `<div style="font-size: 0.85rem; color: #a0a0a0; margin-top: 4px; line-height: 1.4;">${escapeHtml(setting.description)}</div>` : ''}
             </div>
-            <div class="content-P2T0i" style="flex-shrink: 0;">
+            <div class="enhanced-option-content" style="flex-shrink: 0;">
                 <div tabindex="0" class="toggle-container-lZfHP button-container-zVLH6 plugin-setting-toggle ${checkedClass}" data-key="${escapeHtml(setting.key)}" style="outline: none; cursor: pointer;">
                     <div class="toggle-toOWM"></div>
                 </div>
@@ -130,12 +130,12 @@ export const modalManager = {
     _buildInput: (setting: SettingSchemaItem, currentValue: any): string => {
         const label = setting.title || (setting as any).label || setting.key;
         return `
-        <div class="option-vFOAS" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
-            <div class="heading-dYMDt" style="flex: 1; padding-right: 20px; min-width: 0;">
-                <div class="label-qI6Vh" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
+        <div class="enhanced-option" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
+            <div class="enhanced-option-heading" style="flex: 1; padding-right: 20px; min-width: 0;">
+                <div class="enhanced-option-label" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
                 ${setting.description ? `<div style="font-size: 0.85rem; color: #a0a0a0; margin-top: 4px; line-height: 1.4;">${escapeHtml(setting.description)}</div>` : ''}
             </div>
-            <div class="content-P2T0i" style="flex-shrink: 0; width: 50%; max-width: 300px;">
+            <div class="enhanced-option-content" style="flex-shrink: 0; width: 50%; max-width: 300px;">
                 <label class="search-bar-k7MXd search-bar-container-p4tSt" style="width: 100%; padding: 0; margin: 0; display: block;">
                     <input data-key="${escapeHtml(setting.key)}" size="1" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" tabindex="0" class="search-input-bAgAh text-input-hnLiz plugin-setting-input" type="text" placeholder="${escapeHtml(label)}" value="${escapeHtml(currentValue)}" style="width: 100%; box-sizing: border-box; height: 42px; padding: 0 15px; background-color: rgba(255, 255, 255, 0.08); color: white; border: 1px solid transparent; border-radius: 0.35rem; outline: none;">
                 </label>
@@ -154,12 +154,12 @@ export const modalManager = {
         }
 
         return `
-        <div class="option-vFOAS" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
-            <div class="heading-dYMDt" style="flex: 1; padding-right: 20px; min-width: 0;">
-                <div class="label-qI6Vh" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
+        <div class="enhanced-option" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; box-sizing: border-box;">
+            <div class="enhanced-option-heading" style="flex: 1; padding-right: 20px; min-width: 0;">
+                <div class="enhanced-option-label" style="font-size: 1.05rem; font-weight: 600; color: #fff; line-height: 1.4;">${escapeHtml(label)}</div>
                 ${setting.description ? `<div style="font-size: 0.85rem; color: #a0a0a0; margin-top: 4px; line-height: 1.4;">${escapeHtml(setting.description)}</div>` : ''}
             </div>
-            <div class="content-P2T0i" style="flex-shrink: 0; width: 50%; max-width: 300px;">
+            <div class="enhanced-option-content" style="flex-shrink: 0; width: 50%; max-width: 300px;">
                 <select data-key="${escapeHtml(setting.key)}" class="search-input-bAgAh text-input-hnLiz plugin-setting-select" style="width: 100%; padding: 0 15px; cursor: pointer; background-color: rgba(255, 255, 255, 0.08); color: white; border: 1px solid transparent; border-radius: 0.35rem; outline: none; appearance: auto; box-sizing: border-box; height: 42px;">
                     ${optionsHtml}
                 </select>
@@ -168,6 +168,13 @@ export const modalManager = {
     },
 
     showPrompt: (promptId: string, title: string, message: string, defaultValue = ''): Promise<string | null> => {
+        if (!document.body) {
+            return new Promise((resolve) => {
+                document.addEventListener('DOMContentLoaded', () => {
+                    modalManager.showPrompt(promptId, title, message, defaultValue).then(resolve);
+                }, { once: true });
+            });
+        }
         return new Promise((resolve) => {
             const modalId = `prompt-modal-${promptId.replace(/[^a-zA-Z0-9]/g, '')}`;
             document.getElementById(modalId)?.remove();
@@ -209,6 +216,13 @@ export const modalManager = {
     },
 
     showAlert: (alertType: string, title: string, message: string, buttons: string[] = ['OK']): Promise<number> => {
+        if (!document.body) {
+            return new Promise((resolve) => {
+                document.addEventListener('DOMContentLoaded', () => {
+                    modalManager.showAlert(alertType, title, message, buttons).then(resolve);
+                }, { once: true });
+            });
+        }
         return new Promise((resolve) => {
             const modalId = `alert-modal-${Math.random().toString(36).substring(2, 9)}`;
             document.getElementById(modalId)?.remove();
@@ -217,7 +231,11 @@ export const modalManager = {
             let buttonsHtml = '';
             btnList.forEach((btnText, index) => {
                 const isPrimary = index === 0;
-                const bgStyle = isPrimary ? 'background-color: var(--primary-accent-color, #735bf2); color: white;' : 'background-color: rgba(255,255,255,0.1); color: #ccc;';
+                const bgStyle = isPrimary
+                    ? (alertType === 'danger'
+                        ? 'background-color: var(--danger-color, #dc2626); color: white;'
+                        : 'background-color: var(--accent-color, var(--primary-accent-color, #735bf2)); color: white;')
+                    : 'background-color: rgba(255,255,255,0.1); color: #ccc;';
                 buttonsHtml += `
                     <div tabindex="0" class="button-container-zVLH6 alert-dialog-btn" data-index="${index}" style="cursor: pointer; padding: 10px 22px; border-radius: 4px; font-weight: 600; ${bgStyle}">
                         <div class="label-wbfsE">${escapeHtml(btnText)}</div>
@@ -279,6 +297,12 @@ export const modalManager = {
     },
 
     showToast: (id: string, title: string, message: string, status: 'success' | 'fail' | 'info' = 'success'): void => {
+        if (!document.body) {
+            document.addEventListener('DOMContentLoaded', () => {
+                modalManager.showToast(id, title, message, status);
+            }, { once: true });
+            return;
+        }
         let container = document.querySelector('.toasts-container-oKECy') as HTMLElement;
         if (!container) {
             container = document.createElement('div');

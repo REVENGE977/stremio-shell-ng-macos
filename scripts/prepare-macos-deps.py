@@ -645,25 +645,34 @@ def find_file_in_prefixes(dep: str, current_file: Path, prefixes: list[Path], rp
         p = current_file.parent / rel
         if p.exists():
             return p.resolve()
+        rel_name = Path(rel).name
+        for prefix in prefixes:
+            for pattern in (
+                str(prefix / "lib" / rel_name),
+                str(prefix / "opt" / "*" / "lib" / rel_name),
+                str(prefix / "libexec" / "*" / "lib" / rel_name),
+            ):
+                hits = glob.glob(pattern)
+                if hits:
+                    return Path(hits[0]).resolve()
         return None
     if dep.startswith("@rpath/"):
         rel = dep[len("@rpath/") :]
         for rp in rpaths:
             for prefix in prefixes:
                 if rp.startswith("/"):
-                    cand = Path(str(prefix).rstrip("/") + "/" + rp.lstrip("/")) if not Path(rp).exists() else Path(rp)
-                    # Try prefix-rooted first when prefix is a staging sysroot
-                    if str(prefix) != "/":
-                        stage_cand = Path(str(prefix) + rp) / rel
-                        if stage_cand.exists():
-                            return stage_cand.resolve()
-                    else:
+                    if str(prefix) in ("/opt/local", "/usr/local", "/opt/homebrew"):
                         real_cand = Path(rp) / rel
                         if real_cand.exists():
                             return real_cand.resolve()
+                    elif str(prefix) != "/":
+                        stage_cand = Path(str(prefix) + rp) / rel
+                        if stage_cand.exists():
+                            return stage_cand.resolve()
         for prefix in prefixes:
             for pattern in (
                 str(prefix / "lib" / rel),
+                str(prefix / "opt" / "*" / "lib" / rel),
                 str(prefix / "libexec" / "*" / "lib" / rel),
             ):
                 hits = glob.glob(pattern)
@@ -889,11 +898,20 @@ def cmd_stage_arm64(args: argparse.Namespace) -> None:
 
     seeds = ["mpv"]
     # Also try staging arm64 ffmpeg/nodejs matching the host's installed packages
-    for bin_name in ("ffmpeg", "node"):
-        p = Path(args.macports_prefix) / "bin" / bin_name
+    probe_bins: list[Path] = [
+        Path(args.macports_prefix) / "bin" / "ffmpeg",
+        Path(args.macports_prefix) / "bin" / "node",
+    ]
+    probe_bins.extend(
+        Path(p) for p in sorted(glob.glob(f"{args.macports_prefix}/libexec/ffmpeg*/bin/ffmpeg"))
+    )
+    probe_bins.extend(
+        Path(p) for p in sorted(glob.glob(f"{args.macports_prefix}/bin/node*"), reverse=True)
+    )
+    for p in probe_bins:
         if p.exists():
             port_name = stager.port_provides(str(p.resolve())) or stager.port_provides(str(p))
-            if port_name:
+            if port_name and port_name not in seeds:
                 seeds.append(port_name)
 
     stager.stage_seed_binaries_and_walk(seeds)
@@ -932,6 +950,9 @@ def cmd_bundle_app(args: argparse.Namespace) -> None:
         for tool in ("node", "ffmpeg", "ffprobe"):
             x64_cands = [macports_prefix / "bin" / tool]
             arm64_cands = [arm64_prefix / "bin" / tool]
+            if tool == "node":
+                x64_cands.extend(Path(p) for p in sorted(glob.glob(f"{macports_prefix}/bin/node*"), reverse=True))
+                arm64_cands.extend(Path(p) for p in sorted(glob.glob(f"{arm64_prefix}/bin/node*"), reverse=True))
             if tool in ("ffmpeg", "ffprobe"):
                 x64_cands.extend(Path(p) for p in glob.glob(f"{macports_prefix}/libexec/ffmpeg*/bin/{tool}"))
                 arm64_cands.extend(Path(p) for p in glob.glob(f"{arm64_prefix}/libexec/ffmpeg*/bin/{tool}"))

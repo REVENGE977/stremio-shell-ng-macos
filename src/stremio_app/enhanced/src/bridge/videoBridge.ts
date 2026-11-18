@@ -16,6 +16,77 @@ let srcVal = '';
 let videoWidthVal = 1920;
 let videoHeightVal = 1080;
 
+let cachedCorePlayerState: any = null;
+let coreGetStateIsAsync = false;
+let coreFetchInFlight = false;
+let lastCoreFetchMs = 0;
+
+function trackAsyncPlayerState(promise: Promise<any>): void {
+    coreGetStateIsAsync = true;
+    coreFetchInFlight = true;
+    lastCoreFetchMs = Date.now();
+    Promise.resolve(promise)
+        .then((resolved) => {
+            if (resolved && typeof resolved === 'object') {
+                cachedCorePlayerState = resolved;
+            }
+        })
+        .catch(() => {})
+        .finally(() => {
+            coreFetchInFlight = false;
+        });
+}
+
+function readPlayerStateSync(): any {
+    const fn = PermanentCore.getState;
+    if (typeof fn !== 'function') return cachedCorePlayerState;
+
+    const now = Date.now();
+    if (coreGetStateIsAsync) {
+        if (!coreFetchInFlight && now - lastCoreFetchMs >= 150) {
+            try {
+                const res = fn('player');
+                if (res && typeof (res as any).then === 'function') {
+                    trackAsyncPlayerState(res);
+                } else if (res && typeof res === 'object') {
+                    coreGetStateIsAsync = false;
+                    cachedCorePlayerState = res;
+                }
+            } catch (_) {}
+        }
+        return cachedCorePlayerState;
+    }
+
+    try {
+        const res = fn('player');
+        if (res && typeof (res as any).then === 'function') {
+            trackAsyncPlayerState(res);
+            return cachedCorePlayerState;
+        }
+        if (res && typeof res === 'object') {
+            cachedCorePlayerState = res;
+            return res;
+        }
+    } catch (_) {}
+    return cachedCorePlayerState;
+}
+
+function getDurationSec(): number {
+    if (durationVal > 0) return durationVal;
+    const rawDur = Number(readPlayerStateSync()?.duration);
+    return Number.isFinite(rawDur) && rawDur > 0 ? rawDur / 1000 : 0;
+}
+
+function getCoreCurrentTimeSec(): number {
+    if (currentTimeVal > 0) return currentTimeVal;
+    const rawTime = Number(readPlayerStateSync()?.time);
+    return Number.isFinite(rawTime) && rawTime > 0 ? rawTime / 1000 : 0;
+}
+
+function getCoreStreamSrc(): string {
+    return srcVal || String(readPlayerStateSync()?.selected?.stream?.url || '');
+}
+
 function postMpvIpc(args: unknown[], includeId = false): void {
     try {
         const payload = JSON.stringify(includeId ? { id: 1, type: 6, args } : { type: 6, args });
@@ -43,7 +114,9 @@ function createTimeRanges(start: number, end: number) {
 
 export function mountBridgeHost(): void {
     if (!bridgeHost) return;
-    const playerContainer = document.querySelector<HTMLElement>('[class*="player-container"]');
+    const playerContainer = document.querySelector<HTMLElement>(
+        '[class*="player-container"], [class*="video-container-v9_vA"]'
+    );
     const targetParent = playerContainer || document.body;
     if (targetParent && bridgeHost.parentElement !== targetParent) {
         targetParent.appendChild(bridgeHost);
@@ -54,7 +127,7 @@ export function mountBridgeHost(): void {
 export function ensureBridgeVideo(): void {
     mountBridgeHost();
     enforceTransparency();
-    const dur = (durationVal > 0) ? durationVal : ((PermanentCore.getState?.('player')?.duration / 1000) || 0);
+    const dur = getDurationSec();
     if (dur > 0 && bridgeVideo) {
         bridgeVideo.dispatchEvent(new Event('loadedmetadata'));
         bridgeVideo.dispatchEvent(new Event('durationchange'));
@@ -135,10 +208,7 @@ export function setupVideoBridge(): HTMLVideoElement {
     try {
         Object.defineProperty(bridgeVideo, 'currentTime', {
             get() {
-                if (currentTimeVal > 0) return currentTimeVal;
-                const coreTime = PermanentCore.getState?.('player')?.time;
-                if (coreTime && coreTime > 0) return coreTime / 1000;
-                return 0;
+                return getCoreCurrentTimeSec();
             },
             set(val: number) {
                 const targetTime = Math.max(0, Number(val) || 0);
@@ -173,10 +243,7 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         Object.defineProperty(bridgeVideo, 'duration', {
             get() {
-                if (durationVal > 0) return durationVal;
-                const coreDur = PermanentCore.getState?.('player')?.duration;
-                if (coreDur && coreDur > 0) return coreDur / 1000;
-                return 0;
+                return getDurationSec();
             },
             set(val: number) {
                 const newDuration = Math.max(0, Number(val) || 0);
@@ -243,7 +310,7 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         Object.defineProperty(bridgeVideo, 'src', {
             get() {
-                const s = srcVal || PermanentCore.getState?.('player')?.selected?.stream?.url || '';
+                const s = getCoreStreamSrc();
                 if (s && bridgeVideo!.getAttribute('src') !== s) {
                     bridgeVideo!.setAttribute('src', s);
                 }
@@ -258,7 +325,7 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         Object.defineProperty(bridgeVideo, 'currentSrc', {
             get() {
-                const s = srcVal || PermanentCore.getState?.('player')?.selected?.stream?.url || '';
+                const s = getCoreStreamSrc();
                 if (s && bridgeVideo!.getAttribute('src') !== s) {
                     bridgeVideo!.setAttribute('src', s);
                 }
@@ -269,8 +336,8 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         Object.defineProperty(bridgeVideo, 'readyState', {
             get() {
-                const dur = (durationVal > 0) ? durationVal : ((PermanentCore.getState?.('player')?.duration / 1000) || 0);
-                const s = srcVal || PermanentCore.getState?.('player')?.selected?.stream?.url || '';
+                const dur = getDurationSec();
+                const s = getCoreStreamSrc();
                 return (dur > 0 || s !== '') ? 4 : 0;
             },
             configurable: true
@@ -288,16 +355,14 @@ export function setupVideoBridge(): HTMLVideoElement {
 
         Object.defineProperty(bridgeVideo, 'buffered', {
             get() {
-                const dur = (durationVal > 0) ? durationVal : ((PermanentCore.getState?.('player')?.duration / 1000) || 0);
-                return createTimeRanges(0, dur);
+                return createTimeRanges(0, getDurationSec());
             },
             configurable: true
         });
 
         Object.defineProperty(bridgeVideo, 'seekable', {
             get() {
-                const dur = (durationVal > 0) ? durationVal : ((PermanentCore.getState?.('player')?.duration / 1000) || 0);
-                return createTimeRanges(0, dur);
+                return createTimeRanges(0, getDurationSec());
             },
             configurable: true
         });
@@ -407,8 +472,8 @@ export function setupVideoBridge(): HTMLVideoElement {
     // Periodic timeupdate and host mount verification when playing
     setInterval(() => {
         mountBridgeHost();
-        const dur = (durationVal > 0) ? durationVal : ((PermanentCore.getState?.('player')?.duration / 1000) || 0);
-        const cur = (currentTimeVal > 0) ? currentTimeVal : ((PermanentCore.getState?.('player')?.time / 1000) || 0);
+        const dur = getDurationSec();
+        const cur = getCoreCurrentTimeSec();
         if (!pausedVal && (dur > 0 || cur > 0) && bridgeVideo) {
             bridgeVideo.dispatchEvent(new Event('timeupdate'));
         }

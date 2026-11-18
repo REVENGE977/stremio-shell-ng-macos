@@ -164,9 +164,7 @@ echo "==> Verified Universal executable slices:"
 lipo -info "$MACOS_DIR/stremio-enhanced-ng"
 
 # 7. Bundle Universal Node/FFmpeg resources & merged x86_64+arm64 Frameworks/
-if [ -f "server.js" ]; then
-    cp "server.js" "$RESOURCES_DIR/server.js"
-fi
+# Note: server.js is never distributed in the app bundle due to licensing.
 
 echo "==> Merging and verifying Universal dynamic dependencies in $FRAMEWORKS_DIR..."
 python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
@@ -225,6 +223,15 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Stremio Enhanced connects to local and network streaming servers.</string>
 </dict>
 </plist>
 EOF

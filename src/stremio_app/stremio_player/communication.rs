@@ -172,6 +172,8 @@ pub enum BoolProp {
     Seeking,
     EofReached,
     Keepaspect,
+    SubAssForceMargins,
+    Mute,
 }
 stringable!(BoolProp);
 // Int
@@ -190,7 +192,6 @@ stringable!(IntProp);
 #[display(style = "kebab-case")]
 pub enum FpProp {
     TimePos,
-    Mute,
     Volume,
     Duration,
     SubDelay,

@@ -94,54 +94,18 @@ if [ -n "$FFPROBE_BIN" ] && [ -x "$FFPROBE_BIN" ]; then
     chmod +x "$RESOURCES_DIR/ffprobe"
 fi
 
-if [ -f "server.js" ]; then
-    cp "server.js" "$RESOURCES_DIR/server.js"
-fi
+# Note: server.js is never distributed in the app bundle due to licensing.
 
-# Bundle and fix all dynamic libraries using dylibbundler or recursive otool/install_name_tool
+# Bundle dynamic dependencies for stremio-enhanced-ng AND bundled node/ffmpeg/ffprobe tools
+BUNDLE_MODE="x86_64"
+if [ "$(uname -m)" = "arm64" ]; then
+    BUNDLE_MODE="arm64"
+fi
 echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
-BUNDLER_CMD="$(command -v dylibbundler || true)"
-for dylib in "$BREW_PREFIX"/lib/libmpv*.dylib; do
-    if [ -e "$dylib" ]; then
-        cp -L "$dylib" "$FRAMEWORKS_DIR/"
-    fi
-done
-
-if [ -n "$BUNDLER_CMD" ] && [ -x "$BUNDLER_CMD" ]; then
-    echo "==> Resolving recursive dylib tree via dylibbundler..."
-    "$BUNDLER_CMD" -b \
-        -x "$MACOS_DIR/stremio-enhanced-ng" \
-        -d "$FRAMEWORKS_DIR" \
-        -p "@executable_path/../Frameworks" \
-        -s "$BREW_PREFIX/lib" \
-        -of || true
-else
-    echo "==> Resolving dependencies recursively using otool/install_name_tool..."
-    bundle_dylibs() {
-        local target="$1"
-        otool -L "$target" | awk 'NR>1 {print $1}' | while read -r dep; do
-            case "$dep" in
-                "$BREW_PREFIX"/*|/usr/local/*|/opt/homebrew/*)
-                    local base
-                    base="$(basename "$dep")"
-                    if [ ! -f "$FRAMEWORKS_DIR/$base" ] && [ -f "$dep" ]; then
-                        cp -L "$dep" "$FRAMEWORKS_DIR/$base"
-                        chmod 755 "$FRAMEWORKS_DIR/$base"
-                        install_name_tool -id "@executable_path/../Frameworks/$base" "$FRAMEWORKS_DIR/$base" 2>/dev/null || true
-                        bundle_dylibs "$FRAMEWORKS_DIR/$base"
-                    fi
-                    install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$target" 2>/dev/null || true
-                    ;;
-            esac
-        done
-    }
-    bundle_dylibs "$MACOS_DIR/stremio-enhanced-ng"
-    for fw in "$FRAMEWORKS_DIR"/*.dylib; do
-        if [ -f "$fw" ]; then
-            bundle_dylibs "$fw"
-        fi
-    done
-fi
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$BREW_PREFIX" \
+    --mode "$BUNDLE_MODE"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
 
@@ -192,13 +156,21 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Stremio Enhanced connects to local and network streaming servers.</string>
 </dict>
 </plist>
 EOF
 
-if command -v codesign &> /dev/null; then
-    codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
-fi
+codesign --force --deep --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
 
 echo "=========================================================="
 echo "Build succeeded!"

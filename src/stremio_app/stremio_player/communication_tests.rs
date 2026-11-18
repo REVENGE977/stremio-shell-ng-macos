@@ -350,3 +350,40 @@ fn subtitle_commands_require_deferred_selection_and_explicit_ids() {
         None
     );
 }
+
+#[test]
+fn new_webui_mpv_props_deserialize() {
+    let sub_ass_margins: InMsg =
+        serde_json::from_str(r#"["mpv-set-prop",["sub-ass-force-margins",false]]"#).unwrap();
+    assert_eq!(
+        sub_ass_margins,
+        InMsg(
+            InMsgFn::MpvSetProp,
+            InMsgArgs::StProp(
+                PropKey::Bool(BoolProp::SubAssForceMargins),
+                PropVal::Bool(false)
+            )
+        )
+    );
+
+    let mute_str: InMsg = serde_json::from_str(r#"["mpv-set-prop",["mute","no"]]"#).unwrap();
+    assert_eq!(
+        mute_str,
+        InMsg(
+            InMsgFn::MpvSetProp,
+            InMsgArgs::StProp(
+                PropKey::Bool(BoolProp::Mute),
+                PropVal::Str("no".to_string())
+            )
+        )
+    );
+
+    let mute_bool: InMsg = serde_json::from_str(r#"["mpv-set-prop",["mute",true]]"#).unwrap();
+    assert_eq!(
+        mute_bool,
+        InMsg(
+            InMsgFn::MpvSetProp,
+            InMsgArgs::StProp(PropKey::Bool(BoolProp::Mute), PropVal::Bool(true))
+        )
+    );
+}

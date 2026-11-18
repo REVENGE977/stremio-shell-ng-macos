@@ -38,6 +38,11 @@ if ! command -v dylibbundler &> /dev/null && [ ! -x "$MACPORTS_PREFIX/bin/dylibb
     sudo "$PORT_CMD" -N install dylibbundler || true
 fi
 
+if ! command -v python3 &> /dev/null; then
+    echo "==> Installing python3 via MacPorts..."
+    sudo "$PORT_CMD" -N install python312 || true
+fi
+
 # 2. Ensure Node.js and npm are installed
 if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
     echo "==> node/npm not found. Installing Node.js and npm via MacPorts..."
@@ -122,92 +127,19 @@ mkdir -p "$MACOS_DIR" "$FRAMEWORKS_DIR" "$RESOURCES_DIR"
 cp "$BIN_PATH" "$MACOS_DIR/stremio-enhanced-ng"
 chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 
-# Bundle node executable into Contents/Resources so recipients do not need Node installed
-NODE_BIN="$(command -v node || true)"
-if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]; then
-    echo "==> Bundling standalone Node runtime ($NODE_BIN)..."
-    cp -L "$NODE_BIN" "$RESOURCES_DIR/node"
-    chmod +x "$RESOURCES_DIR/node"
-fi
+# Note: server.js is never distributed in the app bundle due to licensing.
 
-# Bundle ffmpeg / ffprobe if available
-FFMPEG_BIN="$(command -v ffmpeg || true)"
-if [ -z "$FFMPEG_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffmpeg" ]; then
-    FFMPEG_BIN="$MACPORTS_PREFIX/bin/ffmpeg"
+# Bundle Node.js/FFmpeg resources + MacPorts dynamic dependencies and verify bundle
+BUNDLE_MODE="x86_64"
+if [ "$HOST_ARCH" = "arm64" ]; then
+    BUNDLE_MODE="arm64"
 fi
-if [ -n "$FFMPEG_BIN" ] && [ -x "$FFMPEG_BIN" ]; then
-    echo "==> Bundling ffmpeg ($FFMPEG_BIN)..."
-    cp -L "$FFMPEG_BIN" "$RESOURCES_DIR/ffmpeg"
-    chmod +x "$RESOURCES_DIR/ffmpeg"
-fi
-
-FFPROBE_BIN="$(command -v ffprobe || true)"
-if [ -z "$FFPROBE_BIN" ] && [ -x "$MACPORTS_PREFIX/bin/ffprobe" ]; then
-    FFPROBE_BIN="$MACPORTS_PREFIX/bin/ffprobe"
-fi
-if [ -n "$FFPROBE_BIN" ] && [ -x "$FFPROBE_BIN" ]; then
-    echo "==> Bundling ffprobe ($FFPROBE_BIN)..."
-    cp -L "$FFPROBE_BIN" "$RESOURCES_DIR/ffprobe"
-    chmod +x "$RESOURCES_DIR/ffprobe"
-fi
-
-# Copy server.js if present in workspace root or download/fetch default
-if [ -f "server.js" ]; then
-    cp "server.js" "$RESOURCES_DIR/server.js"
-fi
-
-# Bundle and fix all dynamic libraries using dylibbundler or recursive otool/install_name_tool
-echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
-BUNDLER_CMD="$(command -v dylibbundler || true)"
-if [ -z "$BUNDLER_CMD" ] && [ -x "$MACPORTS_PREFIX/bin/dylibbundler" ]; then
-    BUNDLER_CMD="$MACPORTS_PREFIX/bin/dylibbundler"
-fi
-
-# First copy initial libmpv dylib
-for dylib in "$MACPORTS_PREFIX"/lib/libmpv*.dylib; do
-    if [ -e "$dylib" ]; then
-        cp -L "$dylib" "$FRAMEWORKS_DIR/"
-    fi
-done
-
-if [ -n "$BUNDLER_CMD" ] && [ -x "$BUNDLER_CMD" ]; then
-    echo "==> Resolving recursive dylib tree via dylibbundler..."
-    "$BUNDLER_CMD" -b \
-        -x "$MACOS_DIR/stremio-enhanced-ng" \
-        -d "$FRAMEWORKS_DIR" \
-        -p "@executable_path/../Frameworks" \
-        -s "$MACPORTS_PREFIX/lib" \
-        -of || true
-else
-    echo "==> Resolving dependencies recursively using otool/install_name_tool..."
-    # Fallback pure bash recursive collector
-    bundle_dylibs() {
-        local target="$1"
-        otool -L "$target" | awk 'NR>1 {print $1}' | while read -r dep; do
-            case "$dep" in
-                "$MACPORTS_PREFIX"/*|/usr/local/*|/opt/homebrew/*)
-                    local base
-                    base="$(basename "$dep")"
-                    if [ ! -f "$FRAMEWORKS_DIR/$base" ] && [ -f "$dep" ]; then
-                        cp -L "$dep" "$FRAMEWORKS_DIR/$base"
-                        chmod 755 "$FRAMEWORKS_DIR/$base"
-                        install_name_tool -id "@executable_path/../Frameworks/$base" "$FRAMEWORKS_DIR/$base" 2>/dev/null || true
-                        bundle_dylibs "$FRAMEWORKS_DIR/$base"
-                    fi
-                    install_name_tool -change "$dep" "@executable_path/../Frameworks/$base" "$target" 2>/dev/null || true
-                    ;;
-            esac
-        done
-    }
-    bundle_dylibs "$MACOS_DIR/stremio-enhanced-ng"
-    for fw in "$FRAMEWORKS_DIR"/*.dylib; do
-        if [ -f "$fw" ]; then
-            bundle_dylibs "$fw"
-        fi
-    done
-fi
-
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
+echo "==> Packaging resources and dynamic dependencies into $FRAMEWORKS_DIR..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$MACPORTS_PREFIX" \
+    --mode "$BUNDLE_MODE" \
+    --stage-resources
 
 # Generate AppIcon.icns from images/stremio.png using built-in macOS sips + iconutil
 if [ -f "images/stremio.png" ]; then
@@ -258,14 +190,22 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Stremio Enhanced connects to local and network streaming servers.</string>
 </dict>
 </plist>
 EOF
 
-# Ad-hoc codesign so macOS Gatekeeper allows local execution cleanly
-if command -v codesign &> /dev/null; then
-    codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
-fi
+# Ad-hoc codesign & verify so macOS Gatekeeper / AMFI allows execution cleanly
+codesign --force --deep --sign - "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
 
 echo "=================================================================="
 echo "Build succeeded!"

@@ -168,10 +168,8 @@ chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 echo "==> Binary arch verification:"
 file "$MACOS_DIR/stremio-enhanced-ng"
 
-# 7. Bundle Node.js/FFmpeg resources + arm64 dynamic dependencies into Frameworks/
-if [ -f "server.js" ]; then
-    cp "server.js" "$RESOURCES_DIR/server.js"
-fi
+# 7. Bundle arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle
+# Note: server.js is never distributed in the app bundle due to licensing.
 
 echo "==> Packaging arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle..."
 python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
@@ -230,6 +228,15 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Stremio Enhanced connects to local and network streaming servers.</string>
 </dict>
 </plist>
 EOF

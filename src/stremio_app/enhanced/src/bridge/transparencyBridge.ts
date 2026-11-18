@@ -8,7 +8,8 @@ export function isPlayerRoute(): boolean {
     const hash = window.location.hash || '';
     if (hash.startsWith('#/player') || hash.includes('/player/')) return true;
     if (document.querySelector('[class*="player-container"]') !== null) return true;
-    if (document.querySelector('[class*="video-container"]') !== null) return true;
+    if (document.querySelector('[class*="player-container"] [class*="video-container"]') !== null) return true;
+    if (document.querySelector('[class*="video-container-v9_vA"]') !== null) return true;
     return false;
 }
 
@@ -45,7 +46,9 @@ export function enforceTransparency(force?: boolean): void {
         const html = document.documentElement;
         const body = document.body;
         const app = document.getElementById('app');
-        const playerContainer = document.querySelector<HTMLElement>('[class*="player-container"]');
+        const playerContainer = document.querySelector<HTMLElement>(
+            '[class*="player-container"], [class*="video-container-v9_vA"]'
+        );
 
         if (shouldBeTransparent) {
             if (!html || !body) return;
@@ -57,6 +60,10 @@ export function enforceTransparency(force?: boolean): void {
             if (app) {
                 setElementTransparent(app);
             }
+
+            document
+                .querySelectorAll<HTMLElement>('[class*="routes-container"], [class*="route-container"]')
+                .forEach(el => setElementTransparent(el));
 
             if (playerContainer) {
                 setElementTransparent(playerContainer);

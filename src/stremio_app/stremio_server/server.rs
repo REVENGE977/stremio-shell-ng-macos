@@ -1,5 +1,10 @@
 use super::process::{ServerEvent, ServerProcess};
-use std::{env, fs, path::PathBuf, process::Command, time::Duration};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    time::Duration,
+};
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -120,32 +125,48 @@ pub fn find_server_script() -> Option<PathBuf> {
     None
 }
 
+fn is_executable_runnable(path: &Path) -> bool {
+    path.exists()
+        && Command::new(path)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+}
+
 pub fn find_runtime_exe() -> Result<PathBuf, String> {
     if let Ok(mut path) = env::current_exe() {
         path.pop();
         let runtime = path.join("stremio-runtime");
-        if runtime.exists() {
+        if is_executable_runnable(&runtime) {
             return Ok(runtime);
         }
         let bundled_node = path.join("node");
-        if bundled_node.exists() {
+        if is_executable_runnable(&bundled_node) {
             return Ok(bundled_node);
         }
         if let Some(contents_dir) = path.parent() {
             let res_node = contents_dir.join("Resources").join("node");
-            if res_node.exists() {
+            if is_executable_runnable(&res_node) {
                 return Ok(res_node);
+            } else if res_node.exists() {
+                eprintln!(
+                    "[macOS Shell] Bundled Node runtime failed health check ({}), trying fallback...",
+                    res_node.display()
+                );
             }
         }
     }
 
     for candidate in [
-        "/opt/local/bin/node",
         "/opt/homebrew/bin/node",
         "/usr/local/bin/node",
+        "/opt/local/bin/node",
     ] {
         let p = PathBuf::from(candidate);
-        if p.exists() {
+        if is_executable_runnable(&p) {
             return Ok(p);
         }
     }

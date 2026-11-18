@@ -101,11 +101,24 @@ fn handle_enhanced_action(action: EnhancedAction, ctx: &IpcContext) {
             }
         }
         EnhancedAction::StartStreamingServer { id } => {
+            if stremio_server::is_streaming_server_online() {
+                let script = format!(
+                    "window.__receiveServerStartResult && window.__receiveServerStartResult({id:?}, true);"
+                );
+                ctx.proxy.send_event(UserEvent::ExecuteScript(script)).ok();
+                return;
+            }
             ctx.proxy.send_event(UserEvent::RestartServer).ok();
             let proxy_cb = ctx.proxy.clone();
             thread::spawn(move || {
-                thread::sleep(Duration::from_millis(1000));
-                let running = stremio_server::is_streaming_server_online();
+                let mut running = false;
+                for _ in 0..40 {
+                    thread::sleep(Duration::from_millis(250));
+                    if stremio_server::is_streaming_server_online() {
+                        running = true;
+                        break;
+                    }
+                }
                 let script = format!(
                     "window.__receiveServerStartResult && window.__receiveServerStartResult({id:?}, {running});"
                 );
@@ -179,6 +192,11 @@ fn handle_enhanced_action(action: EnhancedAction, ctx: &IpcContext) {
         EnhancedAction::SkipServerVersion { version } => {
             if let Err(e) = ctx.enhanced.lock().unwrap().skip_server_version(&version) {
                 eprintln!("Failed to skip server version: {e}");
+            }
+        }
+        EnhancedAction::SkipClientVersion { version } => {
+            if let Err(e) = ctx.enhanced.lock().unwrap().skip_client_version(&version) {
+                eprintln!("Failed to skip client version: {e}");
             }
         }
         EnhancedAction::DownloadFfmpeg { id } => {

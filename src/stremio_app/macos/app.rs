@@ -133,7 +133,11 @@ fn build_init_script(
                 console.error('[macOS Shell] Initialization script error:', e);
             }}
         }})();
+        try {{
         {ENHANCED_SCRIPT}
+        }} catch(e) {{
+            console.error('[Enhanced] Script error:', e);
+        }}
         "##
     )
 }
@@ -287,10 +291,17 @@ pub fn run_macos(
     let server_ipc_key = std::env::var(SERVER_IPC_KEY).unwrap_or_default();
     let init_script = build_init_script(&server_ipc_key, &initial_data_json, &theme_css_json);
 
+    let server_already_online =
+        !opt.development && crate::stremio_app::stremio_server::is_streaming_server_online();
+
     let initial_endpoint = if opt.development {
         DEV_ENDPOINT.to_string()
     } else if opt.staging {
         STA_ENDPOINT.to_string()
+    } else if server_already_online
+        && opt.webui_url.trim_end_matches('/') == WEB_ENDPOINT.trim_end_matches('/')
+    {
+        web_endpoint_with_streaming_server("http://127.0.0.1:11470")
     } else {
         opt.webui_url.clone()
     };
@@ -302,6 +313,12 @@ pub fn run_macos(
         .with_transparent(true)
         .with_autoplay(true)
         .with_initialization_script(&init_script)
+        .with_new_window_req_handler(|url| {
+            if url.starts_with("https://") || url.starts_with("http://") {
+                let _ = open::that(&url);
+            }
+            false
+        })
         .with_ipc_handler(move |req: wry::http::Request<String>| {
             ipc_in_handler.send(req.into_body()).ok();
         })
@@ -342,7 +359,9 @@ pub fn run_macos(
     });
 
     // Manage Stremio Streaming Server
-    let local_server_url = Arc::new(Mutex::new(None::<String>));
+    let local_server_url = Arc::new(Mutex::new(
+        server_already_online.then(|| "http://127.0.0.1:11470/".to_string()),
+    ));
     let mut server = StremioServer::default();
     let proxy_for_server_notify = proxy.clone();
     server.notify = Some(Arc::new(move || {
@@ -350,8 +369,12 @@ pub fn run_macos(
             .send_event(UserEvent::PollServerEvents)
             .ok();
     }));
-    if !opt.development {
+    if !opt.development && !server_already_online {
         server.restart();
+    } else if server_already_online {
+        println!(
+            "[macOS Shell] Streaming server already listening on 127.0.0.1:11470; using existing instance."
+        );
     }
 
     let discord_rpc = DiscordRpc::new(web_out_tx.clone());
