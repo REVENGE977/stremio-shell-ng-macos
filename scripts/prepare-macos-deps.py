@@ -314,7 +314,62 @@ def parse_archive_filename(port: str, filename: str) -> dict | None:
     }
 
 
+def download_url_to_file(url: str, dest: Path) -> None:
+    curl_bin = shutil.which("curl")
+    if curl_bin:
+        res = subprocess.run(
+            [
+                curl_bin,
+                "-sSL",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
+                "--connect-timeout",
+                "30",
+                "--max-time",
+                "300",
+                "-A",
+                "stremio-enhanced-ng-macos-builder/1.0",
+                "-o",
+                str(dest),
+                "-w",
+                "%{http_code}",
+                url,
+            ],
+            text=True,
+            capture_output=True,
+        )
+        if res.returncode != 0:
+            dest.unlink(missing_ok=True)
+            raise RuntimeError(f"curl failed ({res.returncode}) for {url}: {res.stderr.strip()}")
+        status_code = int((res.stdout or "0").strip() or "0")
+        if status_code < 200 or status_code >= 400:
+            dest.unlink(missing_ok=True)
+            raise urllib.error.HTTPError(url, status_code, f"HTTP Error {status_code}", None, None)
+        return
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "stremio-enhanced-ng-macos-builder/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        dest.write_bytes(resp.read())
+
+
 def fetch_url_bytes(url: str) -> bytes:
+    curl_bin = shutil.which("curl")
+    if curl_bin:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False) as tf:
+            tmp_path = Path(tf.name)
+        try:
+            download_url_to_file(url, tmp_path)
+            return tmp_path.read_bytes()
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "stremio-enhanced-ng-macos-builder/1.0"},
@@ -441,9 +496,8 @@ class MacPortsArm64Stager:
         cached_tbz2 = self.cache_dir / filename
         if not cached_tbz2.exists():
             print(f"[arm64-stage] Downloading {filename} ...")
-            data = fetch_url_bytes(url)
             tmp_path = cached_tbz2.with_suffix(".tbz2.part")
-            tmp_path.write_bytes(data)
+            download_url_to_file(url, tmp_path)
             tmp_path.replace(cached_tbz2)
         else:
             print(f"[arm64-stage] Using cached {filename}")
