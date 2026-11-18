@@ -96,19 +96,7 @@ fi
 
 # Note: server.js is never distributed in the app bundle due to licensing.
 
-# Bundle dynamic dependencies for stremio-enhanced-ng AND bundled node/ffmpeg/ffprobe tools
-BUNDLE_MODE="x86_64"
-if [ "$(uname -m)" = "arm64" ]; then
-    BUNDLE_MODE="arm64"
-fi
-echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
-python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
-    --app-dir "$APP_DIR" \
-    --macports-prefix "$BREW_PREFIX" \
-    --mode "$BUNDLE_MODE"
-
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
-
+# Generate AppIcon.icns and Info.plist before bundle-app codesigns the .app bundle
 if [ -f "images/stremio.png" ]; then
     cp "images/stremio.png" "$RESOURCES_DIR/icon.png"
     if command -v sips &> /dev/null && command -v iconutil &> /dev/null; then
@@ -168,6 +156,19 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+# Bundle dynamic dependencies for stremio-enhanced-ng AND bundled node/ffmpeg/ffprobe tools
+BUNDLE_MODE="x86_64"
+if [ "$(uname -m)" = "arm64" ]; then
+    BUNDLE_MODE="arm64"
+fi
+echo "==> Bundling dynamic dependencies into $FRAMEWORKS_DIR..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$BREW_PREFIX" \
+    --mode "$BUNDLE_MODE"
+
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/stremio-enhanced-ng" 2>/dev/null || true
 
 codesign --force --deep --sign - "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"

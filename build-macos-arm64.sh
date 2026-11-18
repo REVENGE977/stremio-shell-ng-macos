@@ -168,18 +168,7 @@ chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 echo "==> Binary arch verification:"
 file "$MACOS_DIR/stremio-enhanced-ng"
 
-# 7. Bundle arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle
-# Note: server.js is never distributed in the app bundle due to licensing.
-
-echo "==> Packaging arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle..."
-python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
-    --app-dir "$APP_DIR" \
-    --macports-prefix "$MACPORTS_PREFIX" \
-    --arm64-stage "$ARM64_STAGE_DIR" \
-    --mode arm64 \
-    --stage-resources
-
-# 9. App icon generation
+# 7. App icon generation and Info.plist (must exist before codesigning the .app bundle)
 if [ -f "images/stremio.png" ]; then
     cp "images/stremio.png" "$RESOURCES_DIR/icon.png"
     if command -v sips &> /dev/null && command -v iconutil &> /dev/null; then
@@ -200,7 +189,6 @@ if [ -f "images/stremio.png" ]; then
     fi
 fi
 
-# 10. Info.plist
 cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -240,6 +228,16 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+# 8. Bundle arm64 resources, Frameworks/libmpv.2.dylib, codesign, and verify bundle
+# Note: server.js is never distributed in the app bundle due to licensing.
+echo "==> Packaging arm64 resources, Frameworks/libmpv.2.dylib, and verifying bundle..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$MACPORTS_PREFIX" \
+    --arm64-stage "$ARM64_STAGE_DIR" \
+    --mode arm64 \
+    --stage-resources
 
 codesign --force --deep --sign - "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"

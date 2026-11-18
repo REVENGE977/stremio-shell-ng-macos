@@ -129,19 +129,7 @@ chmod +x "$MACOS_DIR/stremio-enhanced-ng"
 
 # Note: server.js is never distributed in the app bundle due to licensing.
 
-# Bundle Node.js/FFmpeg resources + MacPorts dynamic dependencies and verify bundle
-BUNDLE_MODE="x86_64"
-if [ "$HOST_ARCH" = "arm64" ]; then
-    BUNDLE_MODE="arm64"
-fi
-echo "==> Packaging resources and dynamic dependencies into $FRAMEWORKS_DIR..."
-python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
-    --app-dir "$APP_DIR" \
-    --macports-prefix "$MACPORTS_PREFIX" \
-    --mode "$BUNDLE_MODE" \
-    --stage-resources
-
-# Generate AppIcon.icns from images/stremio.png using built-in macOS sips + iconutil
+# Generate AppIcon.icns and Info.plist before bundle-app codesigns the .app bundle
 if [ -f "images/stremio.png" ]; then
     cp "images/stremio.png" "$RESOURCES_DIR/icon.png"
     if command -v sips &> /dev/null && command -v iconutil &> /dev/null; then
@@ -162,7 +150,6 @@ if [ -f "images/stremio.png" ]; then
     fi
 fi
 
-# Create Info.plist
 cat > "$CONTENTS_DIR/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -202,6 +189,18 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
+
+# Bundle Node.js/FFmpeg resources + MacPorts dynamic dependencies and verify bundle
+BUNDLE_MODE="x86_64"
+if [ "$HOST_ARCH" = "arm64" ]; then
+    BUNDLE_MODE="arm64"
+fi
+echo "==> Packaging resources and dynamic dependencies into $FRAMEWORKS_DIR..."
+python3 "$(dirname "$0")/scripts/prepare-macos-deps.py" bundle-app \
+    --app-dir "$APP_DIR" \
+    --macports-prefix "$MACPORTS_PREFIX" \
+    --mode "$BUNDLE_MODE" \
+    --stage-resources
 
 # Ad-hoc codesign & verify so macOS Gatekeeper / AMFI allows execution cleanly
 codesign --force --deep --sign - "$APP_DIR"

@@ -913,17 +913,21 @@ def verify_app_bundle(app_dir: Path, required_archs: list[str]) -> None:
             else:
                 raise RuntimeError(f"Non-relocatable external dependency in {mach.name}: {dep}")
 
-    res = subprocess.run(
-        ["codesign", "--verify", "--deep", "--strict", str(app_dir)],
-        text=True,
-        capture_output=True,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(f"codesign --verify failed for {app_dir}: {res.stderr.strip()}")
+    if (contents / "Info.plist").exists():
+        res = subprocess.run(
+            ["codesign", "--verify", "--deep", "--strict", str(app_dir)],
+            text=True,
+            capture_output=True,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(f"codesign --verify failed for {app_dir}: {res.stderr.strip()}")
+        sig_note = "valid signature"
+    else:
+        sig_note = "Mach-O binaries signed (Info.plist not yet present)"
 
     print(
         f"[verify] OK: {app_dir.name} verified (libmpv.2.dylib archs: {sorted(mpv_archs)}, "
-        f"{len(list(frameworks.glob('*.dylib')))} bundled dylibs, valid signature)"
+        f"{len(list(frameworks.glob('*.dylib')))} bundled dylibs, {sig_note})"
     )
 
 
@@ -1139,7 +1143,8 @@ def cmd_bundle_app(args: argparse.Namespace) -> None:
             codesign_adhoc(dylib)
     for exe in executables:
         codesign_adhoc(exe)
-    codesign_adhoc(app_dir)
+    if (contents / "Info.plist").exists():
+        codesign_adhoc(app_dir)
 
     req_archs = (
         ["arm64"]
