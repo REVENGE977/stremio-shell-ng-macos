@@ -29,6 +29,16 @@ from pathlib import Path
 from typing import Iterable
 
 MACPORTS_PACKAGES_URL = "https://packages.macports.org"
+MACPORTS_MIRRORS = [
+    MACPORTS_PACKAGES_URL,
+    "https://fra.de.packages.macports.org",
+    "https://nue.de.packages.macports.org",
+    "https://mse.uk.packages.macports.org",
+    "https://cph.dk.packages.macports.org",
+    "https://vie.at.packages.macports.org",
+    "https://bos.us.packages.macports.org",
+    "https://kmq.jp.packages.macports.org",
+]
 
 SYSTEM_LIB_PREFIXES = (
     "/System/Library/",
@@ -394,8 +404,20 @@ class MacPortsArm64Stager:
         self.fetched_ports: set[str] = set()
         self.host_port_cache: dict[str, str | None] = {}
         self.host_variant_cache: dict[str, set[str]] = {}
+        env_mirror = os.environ.get("MACPORTS_PACKAGES_URL", "").strip().rstrip("/")
+        self.mirrors: list[str] = []
+        if env_mirror:
+            self.mirrors.append(env_mirror)
+        for mirror in MACPORTS_MIRRORS:
+            if mirror not in self.mirrors:
+                self.mirrors.append(mirror)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.stage_dir.mkdir(parents=True, exist_ok=True)
+
+    def _promote_mirror(self, base_url: str) -> None:
+        if base_url in self.mirrors and self.mirrors[0] != base_url:
+            self.mirrors.remove(base_url)
+            self.mirrors.insert(0, base_url)
 
     def stage_path(self, abs_macports_path: str) -> Path:
         rel = abs_macports_path.lstrip("/")
@@ -416,14 +438,32 @@ class MacPortsArm64Stager:
         self.host_variant_cache[port] = variants
         return variants
 
-    def select_best_archive(self, port: str) -> tuple[str, str] | None:
-        url = f"{MACPORTS_PACKAGES_URL}/{port}/"
-        try:
-            html_bytes = fetch_url_bytes(url)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
+    def select_best_archive(self, port: str) -> str | None:
+        html_bytes: bytes | None = None
+        last_err: Exception | None = None
+        saw_404 = False
+        for base_url in list(self.mirrors):
+            url = f"{base_url}/{port}/"
+            try:
+                html_bytes = fetch_url_bytes(url)
+                self._promote_mirror(base_url)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    saw_404 = True
+                    continue
+                last_err = e
+                print(f"[arm64-stage] WARN: Mirror {base_url} returned HTTP {e.code} for {port}/, trying next mirror...")
+            except Exception as e:
+                last_err = e
+                print(f"[arm64-stage] WARN: Mirror {base_url} failed for {port}/ ({e}), trying next mirror...")
+
+        if html_bytes is None:
+            if saw_404 and last_err is None:
                 return None
-            raise
+            if last_err is not None:
+                raise last_err
+            return None
         parser = LinkParser()
         parser.feed(html_bytes.decode("utf-8", errors="replace"))
 
@@ -481,23 +521,37 @@ class MacPortsArm64Stager:
         if not self.pinned_darwin and best["os_tag"] != "darwin_any":
             self.pinned_darwin = best["os_tag"]
             print(f"[arm64-stage] Pinned MacPorts archive epoch to {self.pinned_darwin}")
-        return best["filename"], f"{url}{best['filename']}"
+        return best["filename"]
+
+    def download_archive_from_mirrors(self, port: str, filename: str, dest: Path) -> None:
+        last_err: Exception | None = None
+        for base_url in list(self.mirrors):
+            url = f"{base_url}/{port}/{filename}"
+            try:
+                download_url_to_file(url, dest)
+                self._promote_mirror(base_url)
+                return
+            except Exception as e:
+                last_err = e
+                print(f"[arm64-stage] WARN: Mirror {base_url} failed for {filename} ({e}), trying next mirror...")
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError(f"No MacPorts mirrors configured to download {filename}")
 
     def download_and_extract_port(self, port: str) -> bool:
         if port in self.fetched_ports:
             return True
-        selected = self.select_best_archive(port)
-        if not selected:
+        filename = self.select_best_archive(port)
+        if not filename:
             print(f"[arm64-stage] WARN: No prebuilt arm64 MacPorts archive found for '{port}'")
             self.fetched_ports.add(port)
             return False
 
-        filename, url = selected
         cached_tbz2 = self.cache_dir / filename
         if not cached_tbz2.exists():
             print(f"[arm64-stage] Downloading {filename} ...")
             tmp_path = cached_tbz2.with_suffix(".tbz2.part")
-            download_url_to_file(url, tmp_path)
+            self.download_archive_from_mirrors(port, filename, tmp_path)
             tmp_path.replace(cached_tbz2)
         else:
             print(f"[arm64-stage] Using cached {filename}")
