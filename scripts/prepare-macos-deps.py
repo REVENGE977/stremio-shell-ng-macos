@@ -828,7 +828,7 @@ def collect_deps_for_prefix(
         if candidate.exists():
             resolved = candidate.resolve()
             if required_arch in lipo_archs(resolved):
-                collected[resolved.name] = resolved
+                collected[candidate.name] = resolved
                 queue.append(resolved)
                 break
 
@@ -851,7 +851,8 @@ def collect_deps_for_prefix(
                 raise RuntimeError(
                     f"[{required_arch}] {resolved} lacks '{required_arch}' slice (found {archs})"
                 )
-            collected[resolved.name] = resolved
+            dep_name = Path(dep).name
+            collected[dep_name] = resolved
             if resolved not in visited:
                 queue.append(resolved)
 
@@ -1088,6 +1089,7 @@ def cmd_bundle_app(args: argparse.Namespace) -> None:
         x64_libs = collect_deps_for_prefix(x64_exes, macports_prefix, "x86_64")
 
     all_names = sorted(set(arm64_libs.keys()) | set(x64_libs.keys()))
+    seen_sources: dict[tuple[Path | None, Path | None], str] = {}
     tmp_lipo_dir = frameworks_dir / ".lipo-tmp"
     if args.mode == "universal":
         tmp_lipo_dir.mkdir(exist_ok=True)
@@ -1098,6 +1100,11 @@ def cmd_bundle_app(args: argparse.Namespace) -> None:
                 dest.unlink()
             a_path = arm64_libs.get(name)
             x_path = x64_libs.get(name)
+            source_key = (a_path, x_path)
+            if source_key in seen_sources:
+                dest.symlink_to(seen_sources[source_key])
+                continue
+            seen_sources[source_key] = name
             if a_path and x_path and a_path != x_path and args.mode == "universal":
                 lipo_merge_pair(x_path, a_path, dest, tmp_lipo_dir)
             elif a_path:
