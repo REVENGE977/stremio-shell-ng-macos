@@ -57,7 +57,7 @@ where
 }
 
 /// Persistent settings stored in `settings.json`.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(
@@ -254,12 +254,16 @@ impl EnhancedManager {
 
     /// Reload plugins, themes, and settings from disk.
     pub fn reload(&mut self) {
-        self.settings = Self::load_settings(&self.settings_path);
+        let loaded = Self::load_settings(&self.settings_path);
+        let original = loaded.clone();
+        self.settings = loaded;
         self.plugins.clear();
         self.themes.clear();
         self.discover_plugins();
         self.discover_themes();
-        self.save_settings();
+        if self.settings != original {
+            self.save_settings();
+        }
     }
 
     /// Toggle a plugin's enabled status.
@@ -347,8 +351,6 @@ impl EnhancedManager {
         let server_dir = crate::stremio_app::stremio_server::server_dir();
         let server_path = crate::stremio_app::stremio_server::default_server_path();
         let exists = crate::stremio_app::stremio_server::find_server_script().is_some();
-        let is_running =
-            running || crate::stremio_app::stremio_server::is_streaming_server_online();
 
         let current_version_file = server_dir.join("version.txt");
         let current_version = fs::read_to_string(&current_version_file)
@@ -364,7 +366,7 @@ impl EnhancedManager {
 
         ServerStatusUiData {
             exists,
-            running: is_running,
+            running,
             server_dir: server_dir.to_string_lossy().to_string(),
             server_path: server_path.to_string_lossy().to_string(),
             current_version,
@@ -667,15 +669,18 @@ pub fn open_folder(path: &Path) {
     }
 }
 
+static HTTP_CLIENT: once_cell::sync::Lazy<reqwest::blocking::Client> =
+    once_cell::sync::Lazy::new(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(25))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .expect("Failed to build shared HTTP client")
+    });
+
 /// Helper to fetch URL content synchronously bypassing CORS via reqwest.
 pub fn http_get(url: &str) -> Result<(u16, String), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(25))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let res = client
+    let res = HTTP_CLIENT
         .get(url)
         .header(reqwest::header::USER_AGENT, "StremioShell/5.0")
         .send()

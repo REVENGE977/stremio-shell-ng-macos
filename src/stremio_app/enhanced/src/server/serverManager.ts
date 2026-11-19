@@ -108,14 +108,22 @@ export function reloadToLocalStreamingServer(): void {
     const targetUrl = `http://127.0.0.1:11470/proxy/d=https%3A%2F%2Fweb.stremio.com/${hash}`;
     console.log('[Enhanced Server] Streaming server running. Reloading from web.stremio.com to local proxy:', targetUrl);
 
-    setTimeout(() => {
+    const hasNativeIpc = Boolean(
+        (window as any).chrome?.webview?.postMessage ||
+        (window as any).ipc?.postMessage ||
+        (window as any).webkit?.messageHandlers?.enhanced?.postMessage ||
+        (window as any).webkit?.messageHandlers?.enhancedIpc?.postMessage
+    );
+
+    if (hasNativeIpc) {
         postEnhancedMessage('loadUrl', { url: targetUrl });
+    } else {
         try {
             window.location.replace(targetUrl);
         } catch (_) {
             window.location.href = targetUrl;
         }
-    }, 500);
+    }
 }
 
 export function startStreamingServer(autoReload = true): Promise<boolean> {
@@ -333,17 +341,16 @@ export async function checkServerJsUpdateAndSetup(isManual = false): Promise<voi
         const status = await getServerStatus();
         const serverDir = status.serverDir;
 
-        const remote = await fetchLatestServerVersion();
-        const latestVersion = remote?.version || 'v4.21.1';
-        const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
-        latestServerJsUrl = downloadUrl;
-
         if (!status.exists && !status.running) {
+            const remote = await fetchLatestServerVersion();
+            const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
+            latestServerJsUrl = downloadUrl;
+
             console.log('[Enhanced Server] Neither server.js nor Stremio Service found running. Showing setup instructions...');
             hasPromptedInitialSetup = true;
             await showMissingServerInstructions(downloadUrl, serverDir);
         } else {
-            // If server is already running (via Stremio Service or managed process)
+            // Act on local server state immediately before hitting GitHub for update checks
             if (status.running) {
                 if (window.location.hostname !== '127.0.0.1') {
                     console.log('[Enhanced Server] Streaming server is running. Switching from web.stremio.com to 127.0.0.1...');
@@ -363,7 +370,12 @@ export async function checkServerJsUpdateAndSetup(isManual = false): Promise<voi
                 }
             }
 
-            // Server exists - check for update if version is known
+            // Server exists - now check GitHub for updates without delaying startup/redirect
+            const remote = await fetchLatestServerVersion();
+            const latestVersion = remote?.version || 'v4.21.1';
+            const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
+            latestServerJsUrl = downloadUrl;
+
             const currentVer = status.currentVersion;
             const skippedVer = status.skippedVersion;
 

@@ -1,5 +1,5 @@
 import { PermanentCore } from '../core/permanentCore';
-import { enforceTransparency } from './transparencyBridge';
+import { enforceTransparency, isPlayerRoute } from './transparencyBridge';
 
 let bridgeHost: HTMLDivElement | null = null;
 let bridgeVideo: HTMLVideoElement | null = null;
@@ -471,6 +471,7 @@ export function setupVideoBridge(): HTMLVideoElement {
 
     // Periodic timeupdate and host mount verification when playing
     setInterval(() => {
+        if (!isPlayerRoute()) return;
         mountBridgeHost();
         const dur = getDurationSec();
         const cur = getCoreCurrentTimeSec();

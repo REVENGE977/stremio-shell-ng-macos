@@ -44,6 +44,39 @@ pub enum UserEvent {
     Quit,
 }
 
+const STARTUP_LOADING_HTML: &str = r#"<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #0c0b16;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .spinner {
+    width: 34px;
+    height: 34px;
+    border: 3px solid rgba(123, 91, 245, 0.22);
+    border-top-color: #7b5bf5;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+</head>
+<body><div class="spinner"></div></body>
+</html>"#;
+
 fn build_init_script(
     server_ipc_key: &str,
     initial_data_json: &str,
@@ -54,7 +87,7 @@ fn build_init_script(
     format!(
         r##"
         (function() {{
-            if (window.self !== window.top) return;
+            if (window.self !== window.top || window.location.protocol === 'about:') return;
             try {{
                 window.stremio_server_ipc_key = {server_ipc_key:?};
                 window.__STREMIO_SHELL__ = true;
@@ -132,18 +165,22 @@ fn build_init_script(
             }} catch(e) {{
                 console.error('[macOS Shell] Initialization script error:', e);
             }}
+            try {{
+            {ENHANCED_SCRIPT}
+            }} catch(e) {{
+                console.error('[Enhanced] Script error:', e);
+            }}
         }})();
-        try {{
-        {ENHANCED_SCRIPT}
-        }} catch(e) {{
-            console.error('[Enhanced] Script error:', e);
-        }}
         "##
     )
 }
 
 fn navigate_webview(webview: &WebView, current_endpoint: &mut String, target_url: String) {
-    let same_base = current_endpoint.split('#').next() == target_url.split('#').next();
+    if *current_endpoint == target_url {
+        return;
+    }
+    let same_base = !current_endpoint.is_empty()
+        && current_endpoint.split('#').next() == target_url.split('#').next();
     *current_endpoint = target_url.clone();
     if same_base && target_url.contains('#') {
         let fragment = target_url.split_once('#').map(|(_, h)| h).unwrap_or("");
@@ -168,15 +205,20 @@ fn shutdown_app(
     }
     *shutdown_done = true;
 
-    let size = window.inner_size();
-    let settings = WindowSettings {
-        x: 0.0,
-        y: 0.0,
-        width: size.width as f64,
-        height: size.height as f64,
-        maximized: window.is_maximized(),
-    };
-    let _ = settings.save();
+    let scale_factor = window.scale_factor().max(1.0);
+    let logical_size = window.inner_size().to_logical::<f64>(scale_factor);
+    if logical_size.width >= WINDOW_MIN_WIDTH as f64
+        && logical_size.height >= WINDOW_MIN_HEIGHT as f64
+    {
+        let settings = WindowSettings {
+            x: 0.0,
+            y: 0.0,
+            width: logical_size.width,
+            height: logical_size.height,
+            maximized: window.is_maximized(),
+        };
+        let _ = settings.save();
+    }
 
     drop(player.take());
     server.stop();
@@ -191,16 +233,58 @@ pub fn run_macos(
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
+    // Start the local streaming server as early as possible so it boots in parallel
+    // with window, WKWebView, OpenGL, and libmpv initialization.
+    let server_already_online =
+        !opt.development && crate::stremio_app::stremio_server::is_streaming_server_online();
+    let has_server_script =
+        !opt.development && crate::stremio_app::stremio_server::find_server_script().is_some();
+
+    let local_server_url = Arc::new(Mutex::new(
+        server_already_online.then(|| "http://127.0.0.1:11470/".to_string()),
+    ));
+    let mut server = StremioServer::default();
+    let proxy_for_server_notify = proxy.clone();
+    server.notify = Some(Arc::new(move || {
+        proxy_for_server_notify
+            .send_event(UserEvent::PollServerEvents)
+            .ok();
+    }));
+    if !opt.development && !server_already_online && has_server_script {
+        server.restart();
+    } else if server_already_online {
+        println!(
+            "[macOS Shell] Streaming server already listening on 127.0.0.1:11470; using existing instance."
+        );
+    }
+
+    let (max_width, max_height) = event_loop
+        .primary_monitor()
+        .map(|monitor| {
+            let logical = monitor
+                .size()
+                .to_logical::<f64>(monitor.scale_factor().max(1.0));
+            (
+                logical.width.max(WINDOW_MIN_WIDTH as f64),
+                logical.height.max(WINDOW_MIN_HEIGHT as f64),
+            )
+        })
+        .unwrap_or((1920.0, 1080.0));
+
     let saved_settings = WindowSettings::load().unwrap_or_default();
     let initial_width = if saved_settings.width > 0.0 {
-        saved_settings.width
+        saved_settings
+            .width
+            .clamp(WINDOW_MIN_WIDTH as f64, max_width)
     } else {
-        1280.0
+        1280.0_f64.min(max_width)
     };
     let initial_height = if saved_settings.height > 0.0 {
-        saved_settings.height
+        saved_settings
+            .height
+            .clamp(WINDOW_MIN_HEIGHT as f64, max_height)
     } else {
-        720.0
+        720.0_f64.min(max_height)
     };
 
     let window = WindowBuilder::new()
@@ -278,9 +362,8 @@ pub fn run_macos(
     let enhanced = Arc::new(Mutex::new(EnhancedManager::new()));
     let (ui_data, active_theme_css) = {
         let mgr = enhanced.lock().unwrap();
-        let running = crate::stremio_app::stremio_server::is_streaming_server_online();
         (
-            mgr.ui_data(running),
+            mgr.ui_data(server_already_online),
             mgr.active_theme().map(|t| t.content.clone()),
         )
     };
@@ -291,25 +374,48 @@ pub fn run_macos(
     let server_ipc_key = std::env::var(SERVER_IPC_KEY).unwrap_or_default();
     let init_script = build_init_script(&server_ipc_key, &initial_data_json, &theme_css_json);
 
-    let server_already_online =
-        !opt.development && crate::stremio_app::stremio_server::is_streaming_server_online();
+    // Check if the streaming server already became ready while EnhancedManager & window initialized.
+    let mut ready_server_endpoint =
+        server_already_online.then(|| "http://127.0.0.1:11470/".to_string());
+    let mut server_failed_early = false;
+    for srv_event in server.events() {
+        match srv_event {
+            ServerEvent::Ready(endpoint) => {
+                println!("[macOS Shell] Streaming server ready at {endpoint}");
+                *local_server_url.lock().unwrap() = Some(endpoint.clone());
+                ready_server_endpoint = Some(endpoint);
+            }
+            ServerEvent::Failed(err) => {
+                eprintln!("[macOS Shell] Streaming server failed: {err}");
+                server_failed_early = true;
+            }
+        }
+    }
 
-    let initial_endpoint = if opt.development {
-        DEV_ENDPOINT.to_string()
+    let uses_default_webui =
+        opt.webui_url.trim_end_matches('/') == WEB_ENDPOINT.trim_end_matches('/');
+    let initial_endpoint: Option<String> = if opt.development {
+        Some(DEV_ENDPOINT.to_string())
     } else if opt.staging {
-        STA_ENDPOINT.to_string()
-    } else if server_already_online
-        && opt.webui_url.trim_end_matches('/') == WEB_ENDPOINT.trim_end_matches('/')
-    {
-        web_endpoint_with_streaming_server("http://127.0.0.1:11470")
+        Some(STA_ENDPOINT.to_string())
+    } else if let Some(ref endpoint) = ready_server_endpoint {
+        if uses_default_webui {
+            Some(web_endpoint_with_streaming_server(endpoint))
+        } else {
+            Some(opt.webui_url.clone())
+        }
+    } else if uses_default_webui && has_server_script && !server_failed_early {
+        // Wait for ServerEvent::Ready before loading the WebUI so we load the local
+        // streaming server proxy directly once instead of loading web.stremio.com and reloading.
+        None
     } else {
-        opt.webui_url.clone()
+        Some(opt.webui_url.clone())
     };
 
     // Build transparent WKWebView FIRST (wry replaces ns_window.contentView with WryWebViewParent)
     let ipc_in_handler = ipc_in_tx.clone();
     let web_out_drag = web_out_tx.clone();
-    let webview = WebViewBuilder::new()
+    let webview_builder = WebViewBuilder::new()
         .with_transparent(true)
         .with_autoplay(true)
         .with_initialization_script(&init_script)
@@ -334,9 +440,14 @@ pub fn run_macos(
                 }
             }
             true
-        })
-        .with_url(&initial_endpoint)
-        .build(&window)?;
+        });
+    let webview = if let Some(ref endpoint) = initial_endpoint {
+        webview_builder.with_url(endpoint).build(&window)?
+    } else {
+        webview_builder
+            .with_html(STARTUP_LOADING_HTML)
+            .build(&window)?
+    };
 
     // Attach CAOpenGLLayer-backed mpv view below WKWebView on the main thread before Player::init
     let mpv_layer_ptr =
@@ -358,25 +469,6 @@ pub fn run_macos(
         }
     });
 
-    // Manage Stremio Streaming Server
-    let local_server_url = Arc::new(Mutex::new(
-        server_already_online.then(|| "http://127.0.0.1:11470/".to_string()),
-    ));
-    let mut server = StremioServer::default();
-    let proxy_for_server_notify = proxy.clone();
-    server.notify = Some(Arc::new(move || {
-        proxy_for_server_notify
-            .send_event(UserEvent::PollServerEvents)
-            .ok();
-    }));
-    if !opt.development && !server_already_online {
-        server.restart();
-    } else if server_already_online {
-        println!(
-            "[macOS Shell] Streaming server already listening on 127.0.0.1:11470; using existing instance."
-        );
-    }
-
     let discord_rpc = DiscordRpc::new(web_out_tx.clone());
     spawn_ipc_listener(
         ipc_in_rx,
@@ -392,9 +484,42 @@ pub fn run_macos(
     );
 
     let webui_url_base = opt.webui_url.clone();
-    let mut current_endpoint = initial_endpoint;
+    let mut current_endpoint = initial_endpoint.unwrap_or_default();
     let mut player = Some(player);
     let mut shutdown_done = false;
+
+    // Drain any server readiness event that arrived while WKWebView / MPV were initializing.
+    for srv_event in server.events() {
+        match srv_event {
+            ServerEvent::Ready(endpoint) => {
+                println!("[macOS Shell] Streaming server ready at {endpoint}");
+                *local_server_url.lock().unwrap() = Some(endpoint.clone());
+                open_sender.send(OpenRequest::Reset).ok();
+                let target_url = if uses_default_webui {
+                    web_endpoint_with_streaming_server(&endpoint)
+                } else {
+                    webui_url_base.clone()
+                };
+                navigate_webview(&webview, &mut current_endpoint, target_url);
+            }
+            ServerEvent::Failed(err) => {
+                eprintln!("[macOS Shell] Streaming server failed: {err}");
+                if current_endpoint.is_empty() {
+                    let target_url =
+                        if crate::stremio_app::stremio_server::is_streaming_server_online()
+                            && uses_default_webui
+                        {
+                            *local_server_url.lock().unwrap() =
+                                Some("http://127.0.0.1:11470/".to_string());
+                            web_endpoint_with_streaming_server("http://127.0.0.1:11470")
+                        } else {
+                            webui_url_base.clone()
+                        };
+                    navigate_webview(&webview, &mut current_endpoint, target_url);
+                }
+            }
+        }
+    }
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -447,6 +572,19 @@ pub fn run_macos(
                             }
                             ServerEvent::Failed(err) => {
                                 eprintln!("[macOS Shell] Streaming server failed: {err}");
+                                if current_endpoint.is_empty() {
+                                    let target_url = if crate::stremio_app::stremio_server::is_streaming_server_online()
+                                        && webui_url_base.trim_end_matches('/')
+                                            == WEB_ENDPOINT.trim_end_matches('/')
+                                    {
+                                        *local_server_url.lock().unwrap() =
+                                            Some("http://127.0.0.1:11470/".to_string());
+                                        web_endpoint_with_streaming_server("http://127.0.0.1:11470")
+                                    } else {
+                                        webui_url_base.clone()
+                                    };
+                                    navigate_webview(&webview, &mut current_endpoint, target_url);
+                                }
                             }
                         }
                     }

@@ -122,14 +122,21 @@ import { EnhancedData } from './types';
         checkSettings();
     });
 
-    // Request fresh data from Rust immediately on startup
-    postEnhancedMessage('getData');
+    // If Rust didn't inject initial data, request it immediately; otherwise defer the refresh
+    // until after the initial page render so startup isn't blocked by redundant disk/IPC work.
+    const hasInitialData = Boolean((window as any).__INITIAL_ENHANCED_DATA__);
+    if (!hasInitialData) {
+        postEnhancedMessage('getData');
+    }
 
     ensureBridgeVideo();
     checkSettings();
 
     // Check for streaming server and client updates shortly after launch
     setTimeout(() => {
+        if (hasInitialData) {
+            postEnhancedMessage('getData');
+        }
         checkServerJsUpdateAndSetup(false);
         checkClientUpdate(false);
     }, 1200);

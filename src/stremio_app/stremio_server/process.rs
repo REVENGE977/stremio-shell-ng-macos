@@ -32,6 +32,7 @@ type Logs = Arc<Mutex<VecDeque<String>>>;
 pub struct ServerProcess {
     sender: Sender<Message>,
     events: Receiver<ServerEvent>,
+    stopped: Receiver<()>,
 }
 
 impl ServerProcess {
@@ -42,6 +43,7 @@ impl ServerProcess {
     ) -> Self {
         let (sender, receiver) = flume::unbounded();
         let (event_sender, events) = flume::unbounded();
+        let (stopped_sender, stopped) = flume::bounded(1);
         let worker_sender = sender.clone();
         thread::spawn(move || {
             let emit = |event| {
@@ -81,8 +83,13 @@ impl ServerProcess {
                     _ => {}
                 }
             }
+            let _ = stopped_sender.try_send(());
         });
-        Self { sender, events }
+        Self {
+            sender,
+            events,
+            stopped,
+        }
     }
 
     pub fn start(&self) {
@@ -91,6 +98,7 @@ impl ServerProcess {
 
     pub fn stop(&self) {
         self.sender.send(Message::Stop).ok();
+        let _ = self.stopped.recv_timeout(Duration::from_secs(2));
     }
 
     pub fn events(&self) -> impl Iterator<Item = ServerEvent> + '_ {

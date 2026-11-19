@@ -43,11 +43,11 @@ pub const WHITELISTED_HOSTS: &[&str] = &[
 
 pub fn web_endpoint_with_streaming_server(server_url: &str) -> String {
     let server_url = server_url.trim_end_matches('/');
-    let streaming_server_url =
-        url::form_urlencoded::byte_serialize(server_url.as_bytes()).collect::<String>();
-    let web_endpoint = WEB_ENDPOINT.trim_end_matches('/');
+    let encoded_web_endpoint =
+        url::form_urlencoded::byte_serialize(WEB_ENDPOINT.trim_end_matches('/').as_bytes())
+            .collect::<String>();
 
-    format!("{web_endpoint}/#/?streamingServerUrl={streaming_server_url}")
+    format!("{server_url}/proxy/d={encoded_web_endpoint}/#/")
 }
 
 pub fn safe_url(uri: &str) -> Option<String> {
@@ -91,7 +91,7 @@ mod tests {
     fn web_endpoint_encodes_streaming_server_url() {
         assert_eq!(
             web_endpoint_with_streaming_server("http://127.0.0.1:11470/"),
-            "https://web.stremio.com/#/?streamingServerUrl=http%3A%2F%2F127.0.0.1%3A11470"
+            "http://127.0.0.1:11470/proxy/d=https%3A%2F%2Fweb.stremio.com/#/"
         );
     }
 }

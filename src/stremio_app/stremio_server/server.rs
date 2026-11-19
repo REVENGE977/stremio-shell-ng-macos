@@ -3,10 +3,16 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        OnceLock,
+    },
     time::Duration,
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+static FFMPEG_DETECTED: AtomicBool = AtomicBool::new(false);
+static CACHED_RUNTIME_EXE: OnceLock<PathBuf> = OnceLock::new();
 
 pub struct StremioServer {
     pub notify: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
@@ -62,18 +68,26 @@ pub fn find_shipped_bin_dir() -> Option<PathBuf> {
 }
 
 pub fn is_ffmpeg_installed() -> bool {
-    let dir = server_dir();
-    if dir.join("ffmpeg").exists() && dir.join("ffprobe").exists() {
+    if FFMPEG_DETECTED.load(Ordering::Relaxed) {
         return true;
     }
-    if std::path::Path::new("/opt/local/bin/ffmpeg").exists()
+    let dir = server_dir();
+    let found = (dir.join("ffmpeg").exists() && dir.join("ffprobe").exists())
+        || find_shipped_bin_dir().is_some()
+        || std::path::Path::new("/opt/local/bin/ffmpeg").exists()
         || std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists()
         || std::path::Path::new("/usr/local/bin/ffmpeg").exists()
-        || Command::new("ffmpeg").arg("-version").output().is_ok()
-    {
-        return true;
+        || Command::new("ffmpeg")
+            .arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+    if found {
+        FFMPEG_DETECTED.store(true, Ordering::Relaxed);
     }
-    find_shipped_bin_dir().is_some()
+    found
 }
 
 pub fn download_and_extract_ffmpeg() -> Result<(), String> {
@@ -137,19 +151,28 @@ fn is_executable_runnable(path: &Path) -> bool {
 }
 
 pub fn find_runtime_exe() -> Result<PathBuf, String> {
+    if let Some(cached) = CACHED_RUNTIME_EXE.get() {
+        if cached.exists() || cached == Path::new("node") {
+            return Ok(cached.clone());
+        }
+    }
+
     if let Ok(mut path) = env::current_exe() {
         path.pop();
         let runtime = path.join("stremio-runtime");
         if is_executable_runnable(&runtime) {
+            let _ = CACHED_RUNTIME_EXE.set(runtime.clone());
             return Ok(runtime);
         }
         let bundled_node = path.join("node");
         if is_executable_runnable(&bundled_node) {
+            let _ = CACHED_RUNTIME_EXE.set(bundled_node.clone());
             return Ok(bundled_node);
         }
         if let Some(contents_dir) = path.parent() {
             let res_node = contents_dir.join("Resources").join("node");
             if is_executable_runnable(&res_node) {
+                let _ = CACHED_RUNTIME_EXE.set(res_node.clone());
                 return Ok(res_node);
             } else if res_node.exists() {
                 eprintln!(
@@ -167,17 +190,20 @@ pub fn find_runtime_exe() -> Result<PathBuf, String> {
     ] {
         let p = PathBuf::from(candidate);
         if is_executable_runnable(&p) {
+            let _ = CACHED_RUNTIME_EXE.set(p.clone());
             return Ok(p);
         }
     }
 
-    Ok(PathBuf::from("node"))
+    let fallback = PathBuf::from("node");
+    let _ = CACHED_RUNTIME_EXE.set(fallback.clone());
+    Ok(fallback)
 }
 
 pub fn is_streaming_server_online() -> bool {
     std::net::TcpStream::connect_timeout(
         &"127.0.0.1:11470".parse().unwrap(),
-        std::time::Duration::from_millis(150),
+        std::time::Duration::from_millis(50),
     )
     .is_ok()
 }

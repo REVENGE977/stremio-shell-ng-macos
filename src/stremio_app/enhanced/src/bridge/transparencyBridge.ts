@@ -1,15 +1,20 @@
 let isTransparent = false;
 let isApplying = false;
+let pendingRaf = false;
 const modifiedElements = new Set<HTMLElement>();
 let observer: MutationObserver | null = null;
 let pollTimer: any = null;
 
-export function isPlayerRoute(): boolean {
+function hasPlayerHash(): boolean {
     const hash = window.location.hash || '';
-    if (hash.startsWith('#/player') || hash.includes('/player/')) return true;
-    if (document.querySelector('[class*="player-container"]') !== null) return true;
-    if (document.querySelector('[class*="player-container"] [class*="video-container"]') !== null) return true;
-    if (document.querySelector('[class*="video-container-v9_vA"]') !== null) return true;
+    return hash.startsWith('#/player') || hash.includes('/player/');
+}
+
+export function isPlayerRoute(): boolean {
+    if (hasPlayerHash()) return true;
+    if (document.querySelector('[class*="player-container"], [class*="video-container-v9_vA"]') !== null) {
+        return true;
+    }
     return false;
 }
 
@@ -43,16 +48,19 @@ export function enforceTransparency(force?: boolean): void {
     isApplying = true;
     try {
         const shouldBeTransparent = force !== undefined ? force : isPlayerRoute();
+        if (!shouldBeTransparent && !isTransparent) return;
+
         const html = document.documentElement;
         const body = document.body;
         const app = document.getElementById('app');
-        const playerContainer = document.querySelector<HTMLElement>(
-            '[class*="player-container"], [class*="video-container-v9_vA"]'
-        );
 
         if (shouldBeTransparent) {
             if (!html || !body) return;
             isTransparent = true;
+
+            const playerContainer = document.querySelector<HTMLElement>(
+                '[class*="player-container"], [class*="video-container-v9_vA"]'
+            );
 
             setElementTransparent(html);
             setElementTransparent(body);
@@ -88,6 +96,16 @@ export function enforceTransparency(force?: boolean): void {
     }
 }
 
+function scheduleTransparencyCheck(): void {
+    if (!isTransparent && !hasPlayerHash()) return;
+    if (pendingRaf) return;
+    pendingRaf = true;
+    requestAnimationFrame(() => {
+        pendingRaf = false;
+        enforceTransparency();
+    });
+}
+
 export function setupTransparencyBridge(): void {
     enforceTransparency();
 
@@ -99,10 +117,10 @@ export function setupTransparencyBridge(): void {
         const target = document.documentElement || document.body;
         if (!target) return;
 
-        // Only observe structural/class changes (NOT 'style'), so our own inline style
-        // updates never re-trigger the MutationObserver in a microtask loop on WebKit.
+        // Only observe structural/class changes (NOT 'style'), and coalesce via rAF while
+        // fast-path skipping non-player routes so startup DOM rendering never stalls.
         observer = new MutationObserver(() => {
-            enforceTransparency();
+            scheduleTransparencyCheck();
         });
 
         observer.observe(target, {
@@ -121,11 +139,12 @@ export function setupTransparencyBridge(): void {
 
     if (!pollTimer) {
         pollTimer = setInterval(() => {
+            if (!isTransparent && !hasPlayerHash()) return;
             if (isPlayerRoute()) {
                 enforceTransparency(true);
             } else if (isTransparent) {
                 enforceTransparency(false);
             }
-        }, 300);
+        }, 500);
     }
 }

@@ -399,9 +399,11 @@
       const url = typeof resource === "string" ? resource : resource?.url;
       const isGet = !init || !init.method || init.method.toUpperCase() === "GET";
       const isHttp = url && (url.startsWith("http://") || url.startsWith("https://"));
+      const isLoopback = isHttp && /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
+      const allowProxyFallback = Boolean(isHttp && isGet && !isLoopback);
       try {
         const res = await originalFetch(resource, cleanInit);
-        if (isHttp && isGet && (res.status >= 300 && res.status < 400 || res.status === 403)) {
+        if (allowProxyFallback && (res.status >= 300 && res.status < 400 || res.status === 403)) {
           console.log(`[Enhanced Fetch] Direct fetch returned status ${res.status} for ${url}, trying Rust proxy fallback...`);
           try {
             const { status, bodyText } = await rustFetch(url);
@@ -416,7 +418,8 @@
         }
         return res;
       } catch (fetchErr) {
-        if (isHttp && isGet) {
+        const isAborted = fetchErr?.name === "AbortError" || Boolean(cleanInit?.signal?.aborted);
+        if (allowProxyFallback && !isAborted) {
           console.log(`[Enhanced Fetch] Direct fetch failed for ${url}, trying Rust proxy fallback... (${fetchErr?.message || fetchErr})`);
           try {
             const { status, bodyText } = await rustFetch(url);
@@ -2111,14 +2114,18 @@ This will permanently remove the plugin file from your plugins folder.`,
     const hash = window.location.hash || "#/";
     const targetUrl = `http://127.0.0.1:11470/proxy/d=https%3A%2F%2Fweb.stremio.com/${hash}`;
     console.log("[Enhanced Server] Streaming server running. Reloading from web.stremio.com to local proxy:", targetUrl);
-    setTimeout(() => {
+    const hasNativeIpc = Boolean(
+      window.chrome?.webview?.postMessage || window.ipc?.postMessage || window.webkit?.messageHandlers?.enhanced?.postMessage || window.webkit?.messageHandlers?.enhancedIpc?.postMessage
+    );
+    if (hasNativeIpc) {
       postEnhancedMessage("loadUrl", { url: targetUrl });
+    } else {
       try {
         window.location.replace(targetUrl);
       } catch (_) {
         window.location.href = targetUrl;
       }
-    }, 500);
+    }
   }
   function startStreamingServer(autoReload = true) {
     return new Promise((resolve) => {
@@ -2315,11 +2322,10 @@ Please place server.js in the folder or start Stremio Service. Would you like to
     try {
       const status = await getServerStatus();
       const serverDir = status.serverDir;
-      const remote = await fetchLatestServerVersion();
-      const latestVersion = remote?.version || "v4.21.1";
-      const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
-      latestServerJsUrl = downloadUrl;
       if (!status.exists && !status.running) {
+        const remote = await fetchLatestServerVersion();
+        const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
+        latestServerJsUrl = downloadUrl;
         console.log("[Enhanced Server] Neither server.js nor Stremio Service found running. Showing setup instructions...");
         hasPromptedInitialSetup = true;
         await showMissingServerInstructions(downloadUrl, serverDir);
@@ -2342,6 +2348,10 @@ Please place server.js in the folder or start Stremio Service. Would you like to
             return;
           }
         }
+        const remote = await fetchLatestServerVersion();
+        const latestVersion = remote?.version || "v4.21.1";
+        const downloadUrl = remote?.downloadUrl || DEFAULT_SERVER_JS_URL;
+        latestServerJsUrl = downloadUrl;
         const currentVer = status.currentVersion;
         const skippedVer = status.skippedVersion;
         const isDifferent = remote && currentVer && (isNewerVersion(latestVersion, currentVer) || latestVersion !== currentVer);
@@ -2677,15 +2687,19 @@ Please place server.js in the folder or start Stremio Service. Would you like to
   // src/bridge/transparencyBridge.ts
   var isTransparent = false;
   var isApplying = false;
+  var pendingRaf = false;
   var modifiedElements = /* @__PURE__ */ new Set();
   var observer = null;
   var pollTimer = null;
-  function isPlayerRoute() {
+  function hasPlayerHash() {
     const hash = window.location.hash || "";
-    if (hash.startsWith("#/player") || hash.includes("/player/")) return true;
-    if (document.querySelector('[class*="player-container"]') !== null) return true;
-    if (document.querySelector('[class*="player-container"] [class*="video-container"]') !== null) return true;
-    if (document.querySelector('[class*="video-container-v9_vA"]') !== null) return true;
+    return hash.startsWith("#/player") || hash.includes("/player/");
+  }
+  function isPlayerRoute() {
+    if (hasPlayerHash()) return true;
+    if (document.querySelector('[class*="player-container"], [class*="video-container-v9_vA"]') !== null) {
+      return true;
+    }
     return false;
   }
   function setElementTransparent(el) {
@@ -2710,15 +2724,16 @@ Please place server.js in the folder or start Stremio Service. Would you like to
     isApplying = true;
     try {
       const shouldBeTransparent = force !== void 0 ? force : isPlayerRoute();
+      if (!shouldBeTransparent && !isTransparent) return;
       const html = document.documentElement;
       const body = document.body;
       const app = document.getElementById("app");
-      const playerContainer = document.querySelector(
-        '[class*="player-container"], [class*="video-container-v9_vA"]'
-      );
       if (shouldBeTransparent) {
         if (!html || !body) return;
         isTransparent = true;
+        const playerContainer = document.querySelector(
+          '[class*="player-container"], [class*="video-container-v9_vA"]'
+        );
         setElementTransparent(html);
         setElementTransparent(body);
         if (app) {
@@ -2745,6 +2760,15 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       isApplying = false;
     }
   }
+  function scheduleTransparencyCheck() {
+    if (!isTransparent && !hasPlayerHash()) return;
+    if (pendingRaf) return;
+    pendingRaf = true;
+    requestAnimationFrame(() => {
+      pendingRaf = false;
+      enforceTransparency();
+    });
+  }
   function setupTransparencyBridge() {
     enforceTransparency();
     window.addEventListener("hashchange", () => enforceTransparency());
@@ -2754,7 +2778,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       const target = document.documentElement || document.body;
       if (!target) return;
       observer = new MutationObserver(() => {
-        enforceTransparency();
+        scheduleTransparencyCheck();
       });
       observer.observe(target, {
         childList: true,
@@ -2770,12 +2794,13 @@ Please place server.js in the folder or start Stremio Service. Would you like to
     }
     if (!pollTimer) {
       pollTimer = setInterval(() => {
+        if (!isTransparent && !hasPlayerHash()) return;
         if (isPlayerRoute()) {
           enforceTransparency(true);
         } else if (isTransparent) {
           enforceTransparency(false);
         }
-      }, 300);
+      }, 500);
     }
   }
 
@@ -3213,6 +3238,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       window.addEventListener("load", mountBridgeHost, { once: true });
     }
     setInterval(() => {
+      if (!isPlayerRoute()) return;
       mountBridgeHost();
       const dur = getDurationSec();
       const cur = getCoreCurrentTimeSec();
@@ -3729,10 +3755,16 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       loadEnabledPlugins();
       checkSettings();
     });
-    postEnhancedMessage("getData");
+    const hasInitialData = Boolean(window.__INITIAL_ENHANCED_DATA__);
+    if (!hasInitialData) {
+      postEnhancedMessage("getData");
+    }
     ensureBridgeVideo();
     checkSettings();
     setTimeout(() => {
+      if (hasInitialData) {
+        postEnhancedMessage("getData");
+      }
       checkServerJsUpdateAndSetup(false);
       checkClientUpdate(false);
     }, 1200);

@@ -59,12 +59,14 @@ export function setupFetchInterceptor(): void {
         const url = typeof resource === 'string' ? resource : (resource as any)?.url;
         const isGet = !init || !init.method || init.method.toUpperCase() === 'GET';
         const isHttp = url && (url.startsWith('http://') || url.startsWith('https://'));
+        const isLoopback = isHttp && /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
+        const allowProxyFallback = Boolean(isHttp && isGet && !isLoopback);
 
         try {
             const res = await originalFetch(resource, cleanInit);
             // If the browser fetch returns an unhandled redirect status (3xx) or 403 on an external GET request,
-            // fallback to rustFetch so curl can transparently follow redirects and bypass CORS.
-            if (isHttp && isGet && ((res.status >= 300 && res.status < 400) || res.status === 403)) {
+            // fallback to rustFetch so reqwest can transparently follow redirects and bypass CORS.
+            if (allowProxyFallback && ((res.status >= 300 && res.status < 400) || res.status === 403)) {
                 console.log(`[Enhanced Fetch] Direct fetch returned status ${res.status} for ${url}, trying Rust proxy fallback...`);
                 try {
                     const { status, bodyText } = await rustFetch(url);
@@ -79,7 +81,10 @@ export function setupFetchInterceptor(): void {
             }
             return res;
         } catch (fetchErr: any) {
-            if (isHttp && isGet) {
+            const isAborted =
+                fetchErr?.name === 'AbortError' ||
+                Boolean(cleanInit?.signal?.aborted);
+            if (allowProxyFallback && !isAborted) {
                 console.log(`[Enhanced Fetch] Direct fetch failed for ${url}, trying Rust proxy fallback... (${fetchErr?.message || fetchErr})`);
                 try {
                     const { status, bodyText } = await rustFetch(url);
