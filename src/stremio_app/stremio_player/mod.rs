@@ -2,6 +2,7 @@ pub mod communication;
 pub mod macos_gl;
 pub mod player;
 pub mod subtitle_worker;
+pub mod thumbnailer;
 pub mod video_ready;
 
 pub use communication::{

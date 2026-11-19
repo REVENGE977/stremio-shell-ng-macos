@@ -435,7 +435,7 @@
   }
 
   // src/components/theme-item/theme-item.html
-  var theme_item_default = '<div name="{{ fileName }}-box" tabindex="0" class="addon-whmdO animation-fade-in addon-container-lC5KN button-container-zVLH6" style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s;">\r\n    <div class="info-container-AdMB6" style="flex: 1; min-width: 0; padding-right: 1.5rem;">\r\n        <div class="name-container-qIAg8" title="{{ name }}" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem;">{{ name }}</div>\r\n        <div class="version-container-zdPyN" title="{{ version }}" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); margin-bottom: 0.4rem;">{{ version }}</div>\r\n        <div class="description-container-v7Jhe" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); line-height: 1.4;">\r\n            {{ descriptionBlock }}\r\n            {{ authorBlock }}\r\n        </div>\r\n    </div>\r\n    <div class="buttons-container-g0xXr" style="width: auto; flex-shrink: 0;">\r\n        <div class="action-buttons-container-xMVmz" style="display: flex; align-items: center;">\r\n            <div tabindex="-1" class="install-button-container-yfcq5 button-container-zVLH6 theme-update-btn" style="background-color: #f5bf42; color: #16152b; display: none; margin-right: 1rem; cursor: pointer; user-select: none; padding: 0.5rem 1.1rem; border-radius: 0.35rem; font-weight: 700;" id="{{ fileName }}-update" title="Update available">\r\n                <div class="label-OnWh2" style="color: #16152b; font-weight: bold;">Update</div>\r\n            </div>\r\n\r\n            <div tabindex="0" id="{{ fileName }}-delete" title="Delete theme" class="button-container-zVLH6 theme-delete-btn" style="display: {{ deleteDisplay }}; cursor: pointer; margin-right: 0.9rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); transition: background-color 0.2s, color 0.2s;">\r\n                <svg style="width: 1.05rem; height: 1.05rem; fill: currentcolor;" viewBox="0 0 24 24">\r\n                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>\r\n                </svg>\r\n            </div>\r\n\r\n            <div tabindex="-1" class="{{ buttonClass }} button-container-zVLH6 theme-apply-btn" data-theme="{{ fileName }}" id="theme-btn-{{ fileName }}" style="cursor: pointer; user-select: none; min-width: 6.5rem; text-align: center; padding: 0.5rem 1.25rem; border-radius: 0.35rem; font-weight: 700;">\r\n                <div class="label-OnWh2" style="color: white; font-weight: bold;">{{ label }}</div>\r\n            </div>\r\n        </div>\r\n    </div>\r\n</div>\r\n';
+  var theme_item_default = '<div name="{{ fileName }}-box" tabindex="0" class="addon-whmdO animation-fade-in addon-container-lC5KN button-container-zVLH6" style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s;">\n    <div class="info-container-AdMB6" style="flex: 1; min-width: 0; padding-right: 1.5rem;">\n        <div class="name-container-qIAg8" title="{{ name }}" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem;">{{ name }}</div>\n        <div class="version-container-zdPyN" title="{{ version }}" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); margin-bottom: 0.4rem;">{{ version }}</div>\n        <div class="description-container-v7Jhe" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); line-height: 1.4;">\n            {{ descriptionBlock }}\n            {{ authorBlock }}\n        </div>\n    </div>\n    <div class="buttons-container-g0xXr" style="width: auto; flex-shrink: 0;">\n        <div class="action-buttons-container-xMVmz" style="display: flex; align-items: center;">\n            <div tabindex="-1" class="install-button-container-yfcq5 button-container-zVLH6 theme-update-btn" style="background-color: #f5bf42; color: #16152b; display: none; margin-right: 1rem; cursor: pointer; user-select: none; padding: 0.5rem 1.1rem; border-radius: 0.35rem; font-weight: 700;" id="{{ fileName }}-update" title="Update available">\n                <div class="label-OnWh2" style="color: #16152b; font-weight: bold;">Update</div>\n            </div>\n\n            <div tabindex="0" id="{{ fileName }}-delete" title="Delete theme" class="button-container-zVLH6 theme-delete-btn" style="display: {{ deleteDisplay }}; cursor: pointer; margin-right: 0.9rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); transition: background-color 0.2s, color 0.2s;">\n                <svg style="width: 1.05rem; height: 1.05rem; fill: currentcolor;" viewBox="0 0 24 24">\n                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>\n                </svg>\n            </div>\n\n            <div tabindex="-1" class="{{ buttonClass }} button-container-zVLH6 theme-apply-btn" data-theme="{{ fileName }}" id="theme-btn-{{ fileName }}" style="cursor: pointer; user-select: none; min-width: 6.5rem; text-align: center; padding: 0.5rem 1.25rem; border-radius: 0.35rem; font-weight: 700;">\n                <div class="label-OnWh2" style="color: white; font-weight: bold;">{{ label }}</div>\n            </div>\n        </div>\n    </div>\n</div>\n';
 
   // src/utils/templateCache.ts
   var TemplateCache = class {
@@ -453,16 +453,16 @@
   };
 
   // src/components/modals/plugin-settings-modal.html
-  var plugin_settings_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75); box-sizing: border-box;">\r\n    <div class="modal-dialog-container-DZMKq" style="width: 50%; max-width: 800px; height: auto; max-height: 85vh; display: flex; flex-direction: column; background: #16152b; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); position: relative; box-sizing: border-box;">\r\n        <div class="modal-dialog-background-vZpB_"></div>\r\n        \r\n        <div tabindex="0" title="Close" class="close-button-container-cmxAp button-container-zVLH6" id="{{ modalId }}-close-x" style="position: absolute; top: 15px; right: 15px; cursor: pointer; z-index: 10; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">\r\n            <svg class="icon-OYzlV" style="width: 18px; height: 18px; fill: currentcolor;" viewBox="0 0 512 512"><path d="M289.9 256l95-95c4.5-4.5 7-10.6 7.1-17 0-6.4-2.5-12.5-7-17s-10.6-7.1-17-7.1c-3.2 0-6.3.6-9.2 1.8s-5.6 3-7.8 5.2l-95 95-95-95c-3.4-3.3-7.6-5.6-12.3-6.5-4.6-.9-9.4-.4-13.8 1.4-4.4 1.8-8.1 4.9-10.8 8.8-2.6 3.9-4 8.6-4 13.3-.1 3.2.5 6.3 1.7 9.2 1.2 2.9 3 5.6 5.2 7.8l95 95-95 95c-2.8 2.8-4.8 6.2-6 10-1.1 3.8-1.3 7.8-.5 11.6.8 3.9 2.5 7.5 5 10.5 2.5 3.1 5.8 5.4 9.4 6.9 4.4 1.8 9.2 2.3 13.8 1.4 4.7-.9 8.9-3.2 12.3-6.5l95-95 95 95c3.4 3.3 7.6 5.6 12.3 6.5 4.6.9 9.4.4 13.8-1.4 4.4-1.8 8.1-4.9 10.8-8.8 2.6-3.9 4-8.6 4-13.3.1-3.2-.5-6.3-1.7-9.2-1.2-2.9-3-5.6-5.2-7.8z"></path></svg>\r\n        </div>\r\n        \r\n        <div class="modal-dialog-content-Xgv7Z" style="display: flex; flex-direction: column; max-height: 85vh; padding: 25px 25px 20px 25px; box-sizing: border-box; min-height: 0; flex: 1 1 auto; overflow: hidden;">\r\n            <div class="title-container-v2mmF" title="{{ pluginName }} Settings" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 20px; color: white; flex-shrink: 0;">{{ pluginName }} Settings</div>\r\n            \r\n            <div class="body-container-H80dD" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; box-sizing: border-box;">\r\n                <div class="addon-details-container-VdGrt" style="width: 100%; box-sizing: border-box;">\r\n                    <div class="section-container-N6QHW" style="width: 100%; line-height: 1.5; padding-bottom: 35px; box-sizing: border-box;">\r\n                        {{ settingsHtml }}\r\n                    </div>\r\n                </div>\r\n            </div>\r\n            \r\n            <div class="buttons-container-e_JoR" style="margin-top: 15px; display: flex; justify-content: flex-end; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; box-sizing: border-box;">\r\n                <div tabindex="0" title="Close & Save" class="action-button-eprQG button-container-zVLH6 install-button-container-yfcq5" id="{{ modalId }}-close-btn" style="cursor: pointer; padding: 10px 24px; border-radius: 4px; font-weight: bold; background-color: var(--accent-color, var(--primary-accent-color, #735bf2));">\r\n                    <div class="label-wbfsE" style="color: white;">Close</div>\r\n                </div>\r\n            </div>\r\n        </div>\r\n    </div>\r\n</div>\r\n';
+  var plugin_settings_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75); box-sizing: border-box;">\n    <div class="modal-dialog-container-DZMKq" style="width: 50%; max-width: 800px; height: auto; max-height: 85vh; display: flex; flex-direction: column; background: #16152b; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); position: relative; box-sizing: border-box;">\n        <div class="modal-dialog-background-vZpB_"></div>\n        \n        <div tabindex="0" title="Close" class="close-button-container-cmxAp button-container-zVLH6" id="{{ modalId }}-close-x" style="position: absolute; top: 15px; right: 15px; cursor: pointer; z-index: 10; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">\n            <svg class="icon-OYzlV" style="width: 18px; height: 18px; fill: currentcolor;" viewBox="0 0 512 512"><path d="M289.9 256l95-95c4.5-4.5 7-10.6 7.1-17 0-6.4-2.5-12.5-7-17s-10.6-7.1-17-7.1c-3.2 0-6.3.6-9.2 1.8s-5.6 3-7.8 5.2l-95 95-95-95c-3.4-3.3-7.6-5.6-12.3-6.5-4.6-.9-9.4-.4-13.8 1.4-4.4 1.8-8.1 4.9-10.8 8.8-2.6 3.9-4 8.6-4 13.3-.1 3.2.5 6.3 1.7 9.2 1.2 2.9 3 5.6 5.2 7.8l95 95-95 95c-2.8 2.8-4.8 6.2-6 10-1.1 3.8-1.3 7.8-.5 11.6.8 3.9 2.5 7.5 5 10.5 2.5 3.1 5.8 5.4 9.4 6.9 4.4 1.8 9.2 2.3 13.8 1.4 4.7-.9 8.9-3.2 12.3-6.5l95-95 95 95c3.4 3.3 7.6 5.6 12.3 6.5 4.6.9 9.4.4 13.8-1.4 4.4-1.8 8.1-4.9 10.8-8.8 2.6-3.9 4-8.6 4-13.3.1-3.2-.5-6.3-1.7-9.2-1.2-2.9-3-5.6-5.2-7.8z"></path></svg>\n        </div>\n        \n        <div class="modal-dialog-content-Xgv7Z" style="display: flex; flex-direction: column; max-height: 85vh; padding: 25px 25px 20px 25px; box-sizing: border-box; min-height: 0; flex: 1 1 auto; overflow: hidden;">\n            <div class="title-container-v2mmF" title="{{ pluginName }} Settings" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 20px; color: white; flex-shrink: 0;">{{ pluginName }} Settings</div>\n            \n            <div class="body-container-H80dD" style="flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; box-sizing: border-box;">\n                <div class="addon-details-container-VdGrt" style="width: 100%; box-sizing: border-box;">\n                    <div class="section-container-N6QHW" style="width: 100%; line-height: 1.5; padding-bottom: 35px; box-sizing: border-box;">\n                        {{ settingsHtml }}\n                    </div>\n                </div>\n            </div>\n            \n            <div class="buttons-container-e_JoR" style="margin-top: 15px; display: flex; justify-content: flex-end; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); flex-shrink: 0; box-sizing: border-box;">\n                <div tabindex="0" title="Close & Save" class="action-button-eprQG button-container-zVLH6 install-button-container-yfcq5" id="{{ modalId }}-close-btn" style="cursor: pointer; padding: 10px 24px; border-radius: 4px; font-weight: bold; background-color: var(--accent-color, var(--primary-accent-color, #735bf2));">\n                    <div class="label-wbfsE" style="color: white;">Close</div>\n                </div>\n            </div>\n        </div>\n    </div>\n</div>\n';
 
   // src/components/modals/prompt-modal.html
-  var prompt_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75);">\r\n    <div class="modal-dialog-container-DZMKq" style="width: 50%; max-width: 600px; height: auto; max-height: 80vh; display: flex; flex-direction: column; background: #16152b; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1);">\r\n        <div class="modal-dialog-content-Xgv7Z" style="display: flex; flex-direction: column; padding: 25px;">\r\n            <div class="title-container-v2mmF" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; color: white;">{{ title }}</div>\r\n            <div style="font-size: 0.95rem; color: #a0a0a0; margin-bottom: 20px; line-height: 1.4;">{{ message }}</div>\r\n            \r\n            <label class="search-bar-k7MXd search-bar-container-p4tSt" style="width: 100%; padding: 0; margin: 0; display: block;">\r\n                <input id="{{ modalId }}-input" size="1" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" tabindex="0" class="search-input-bAgAh text-input-hnLiz" type="text" value="{{ defaultValue }}" style="width: 100%; box-sizing: border-box; height: 42px; padding: 0 15px; background-color: rgba(255, 255, 255, 0.08); color: white; border: 1px solid transparent; border-radius: 0.35rem; outline: none;">\r\n            </label>\r\n            \r\n            <div class="buttons-container-e_JoR" style="margin-top: 25px; display: flex; justify-content: flex-end; gap: 15px;">\r\n                <div tabindex="0" title="Cancel" class="cancel-button-zuUX6 action-button-eprQG button-container-zVLH6" id="{{ modalId }}-cancel" style="cursor: pointer; padding: 10px 20px; border-radius: 4px; background-color: rgba(255,255,255,0.1);">\r\n                    <div class="label-wbfsE" style="color: #ccc;">Cancel</div>\r\n                </div>\r\n                <div tabindex="0" title="Submit" class="action-button-eprQG button-container-zVLH6 install-button-container-yfcq5" id="{{ modalId }}-save" style="cursor: pointer; padding: 10px 24px; border-radius: 4px; background-color: var(--accent-color, var(--primary-accent-color, #735bf2));">\r\n                    <div class="label-wbfsE" style="color: white; font-weight: bold;">Submit</div>\r\n                </div>\r\n            </div>\r\n        </div>\r\n    </div>\r\n</div>\r\n';
+  var prompt_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75);">\n    <div class="modal-dialog-container-DZMKq" style="width: 50%; max-width: 600px; height: auto; max-height: 80vh; display: flex; flex-direction: column; background: #16152b; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1);">\n        <div class="modal-dialog-content-Xgv7Z" style="display: flex; flex-direction: column; padding: 25px;">\n            <div class="title-container-v2mmF" style="font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; color: white;">{{ title }}</div>\n            <div style="font-size: 0.95rem; color: #a0a0a0; margin-bottom: 20px; line-height: 1.4;">{{ message }}</div>\n            \n            <label class="search-bar-k7MXd search-bar-container-p4tSt" style="width: 100%; padding: 0; margin: 0; display: block;">\n                <input id="{{ modalId }}-input" size="1" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false" tabindex="0" class="search-input-bAgAh text-input-hnLiz" type="text" value="{{ defaultValue }}" style="width: 100%; box-sizing: border-box; height: 42px; padding: 0 15px; background-color: rgba(255, 255, 255, 0.08); color: white; border: 1px solid transparent; border-radius: 0.35rem; outline: none;">\n            </label>\n            \n            <div class="buttons-container-e_JoR" style="margin-top: 25px; display: flex; justify-content: flex-end; gap: 15px;">\n                <div tabindex="0" title="Cancel" class="cancel-button-zuUX6 action-button-eprQG button-container-zVLH6" id="{{ modalId }}-cancel" style="cursor: pointer; padding: 10px 20px; border-radius: 4px; background-color: rgba(255,255,255,0.1);">\n                    <div class="label-wbfsE" style="color: #ccc;">Cancel</div>\n                </div>\n                <div tabindex="0" title="Submit" class="action-button-eprQG button-container-zVLH6 install-button-container-yfcq5" id="{{ modalId }}-save" style="cursor: pointer; padding: 10px 24px; border-radius: 4px; background-color: var(--accent-color, var(--primary-accent-color, #735bf2));">\n                    <div class="label-wbfsE" style="color: white; font-weight: bold;">Submit</div>\n                </div>\n            </div>\n        </div>\n    </div>\n</div>\n';
 
   // src/components/modals/alert-modal.html
-  var alert_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75); box-sizing: border-box;">\r\n    <div class="modal-dialog-container-DZMKq" style="width: 90%; max-width: 660px; height: auto; max-height: 85vh; display: flex !important; flex-direction: column !important; background: #16152b; border-radius: 0.75rem; overflow: hidden !important; box-shadow: 0 10px 40px rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); box-sizing: border-box !important;">\r\n        <div class="modal-dialog-content-Xgv7Z" style="display: flex !important; flex-direction: column !important; max-height: 85vh !important; box-sizing: border-box !important; min-height: 0 !important; flex: 1 1 auto !important; overflow: hidden !important;">\r\n            <div class="title-container-v2mmF" style="padding: 20px 24px 14px 24px; font-size: 1.25rem; font-weight: bold; color: white; border-bottom: 1px solid rgba(255,255,255,0.08); flex-shrink: 0 !important; box-sizing: border-box !important;">{{ title }}</div>\r\n            \r\n            <div class="body-container-H80dD modal-dialog-message-scroll" tabindex="0" style="padding: 18px 24px; overflow-y: auto !important; overflow-x: hidden !important; flex: 1 1 auto !important; min-height: 0 !important; max-height: 52vh !important; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.35) rgba(0,0,0,0.2); box-sizing: border-box !important; overscroll-behavior: contain; outline: none;">\r\n                <div class="addon-details-container-VdGrt" style="width: 100%; box-sizing: border-box;">\r\n                    <div class="section-container-N6QHW" style="width: 100%; line-height: 1.6; font-size: 0.95rem; color: #ddd; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text;">{{ message }}</div>\r\n                </div>\r\n            </div>\r\n            \r\n            <div class="buttons-container-e_JoR" style="padding: 14px 24px 18px 24px; display: flex !important; justify-content: flex-end !important; align-items: center !important; gap: 10px !important; flex-wrap: wrap !important; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.25); flex-shrink: 0 !important; box-sizing: border-box !important;">\r\n                {{ buttonsHtml }}\r\n            </div>\r\n        </div>\r\n    </div>\r\n    <style>\r\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar {\r\n            width: 8px !important;\r\n        }\r\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-track {\r\n            background: rgba(0, 0, 0, 0.25) !important;\r\n            border-radius: 4px;\r\n        }\r\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-thumb {\r\n            background: rgba(255, 255, 255, 0.35) !important;\r\n            border-radius: 4px;\r\n        }\r\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-thumb:hover {\r\n            background: rgba(255, 255, 255, 0.6) !important;\r\n        }\r\n    </style>\r\n</div>\r\n';
+  var alert_modal_default = '<div data-focus-lock-disabled="false" class="addon-details-modal-container-aBFaQ modal-container-OuxEF modal-container" id="{{ modalId }}" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 999999; display: flex; justify-content: center; align-items: center; background-color: rgba(0, 0, 0, 0.75); box-sizing: border-box;">\n    <div class="modal-dialog-container-DZMKq" style="width: 90%; max-width: 660px; height: auto; max-height: 85vh; display: flex !important; flex-direction: column !important; background: #16152b; border-radius: 0.75rem; overflow: hidden !important; box-shadow: 0 10px 40px rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15); box-sizing: border-box !important;">\n        <div class="modal-dialog-content-Xgv7Z" style="display: flex !important; flex-direction: column !important; max-height: 85vh !important; box-sizing: border-box !important; min-height: 0 !important; flex: 1 1 auto !important; overflow: hidden !important;">\n            <div class="title-container-v2mmF" style="padding: 20px 24px 14px 24px; font-size: 1.25rem; font-weight: bold; color: white; border-bottom: 1px solid rgba(255,255,255,0.08); flex-shrink: 0 !important; box-sizing: border-box !important;">{{ title }}</div>\n            \n            <div class="body-container-H80dD modal-dialog-message-scroll" tabindex="0" style="padding: 18px 24px; overflow-y: auto !important; overflow-x: hidden !important; flex: 1 1 auto !important; min-height: 0 !important; max-height: 52vh !important; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.35) rgba(0,0,0,0.2); box-sizing: border-box !important; overscroll-behavior: contain; outline: none;">\n                <div class="addon-details-container-VdGrt" style="width: 100%; box-sizing: border-box;">\n                    <div class="section-container-N6QHW" style="width: 100%; line-height: 1.6; font-size: 0.95rem; color: #ddd; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text;">{{ message }}</div>\n                </div>\n            </div>\n            \n            <div class="buttons-container-e_JoR" style="padding: 14px 24px 18px 24px; display: flex !important; justify-content: flex-end !important; align-items: center !important; gap: 10px !important; flex-wrap: wrap !important; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.25); flex-shrink: 0 !important; box-sizing: border-box !important;">\n                {{ buttonsHtml }}\n            </div>\n        </div>\n    </div>\n    <style>\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar {\n            width: 8px !important;\n        }\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-track {\n            background: rgba(0, 0, 0, 0.25) !important;\n            border-radius: 4px;\n        }\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-thumb {\n            background: rgba(255, 255, 255, 0.35) !important;\n            border-radius: 4px;\n        }\n        #{{ modalId }} .modal-dialog-message-scroll::-webkit-scrollbar-thumb:hover {\n            background: rgba(255, 255, 255, 0.6) !important;\n        }\n    </style>\n</div>\n';
 
   // src/components/modals/toast.html
-  var toast_default = '<div tabindex="-1" class="toast-item-container-nG0uk button-container-zVLH6 {{ status }}" id="{{ id }}" style="margin-bottom: 10px; display: flex; align-items: center; padding: 12px 18px; border-radius: 6px; background-color: #1f1d36; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border-left: 4px solid var(--accent-color, var(--primary-accent-color, #735bf2)); transition: all 0.3s ease;">\r\n    <div class="icon-container-rjAiH" style="margin-right: 12px; display: flex; align-items: center;">\r\n        <svg class="icon-Y4I_O" style="width: 20px; height: 20px; fill: none; stroke: currentcolor; stroke-width: 50;" viewBox="0 0 512 512">\r\n            <path d="M421 128 197 384l-96-96" style="stroke-linecap: round; stroke-linejoin: round;"></path>\r\n        </svg>\r\n    </div>\r\n    <div class="info-container-xD9V6">\r\n        <div class="title-container-VFReJ" style="font-weight: bold; font-size: 0.95rem;">{{ title }}</div>\r\n        <div class="message-container-znkCj" style="font-size: 0.85rem; color: #bbb; margin-top: 2px;">{{ message }}</div>\r\n    </div>\r\n</div>\r\n';
+  var toast_default = '<div tabindex="-1" class="toast-item-container-nG0uk button-container-zVLH6 {{ status }}" id="{{ id }}" style="margin-bottom: 10px; display: flex; align-items: center; padding: 12px 18px; border-radius: 6px; background-color: #1f1d36; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border-left: 4px solid var(--accent-color, var(--primary-accent-color, #735bf2)); transition: all 0.3s ease;">\n    <div class="icon-container-rjAiH" style="margin-right: 12px; display: flex; align-items: center;">\n        <svg class="icon-Y4I_O" style="width: 20px; height: 20px; fill: none; stroke: currentcolor; stroke-width: 50;" viewBox="0 0 512 512">\n            <path d="M421 128 197 384l-96-96" style="stroke-linecap: round; stroke-linejoin: round;"></path>\n        </svg>\n    </div>\n    <div class="info-container-xD9V6">\n        <div class="title-container-VFReJ" style="font-weight: bold; font-size: 0.95rem;">{{ title }}</div>\n        <div class="message-container-znkCj" style="font-size: 0.85rem; color: #bbb; margin-top: 2px;">{{ message }}</div>\n    </div>\n</div>\n';
 
   // src/components/modals/modalManager.ts
   var modalManager = {
@@ -829,10 +829,10 @@ This will permanently remove the theme file from your themes folder.`,
   }
 
   // src/components/marketplace-item/marketplace-item.html
-  var marketplace_item_default = '<div name="{{ name }}-box" tabindex="0" class="marketplace-item-card animation-fade-in" style="width: 100%; box-sizing: border-box; margin: 0 0 1rem 0; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s, background-color 0.2s;">\r\n    <div class="marketplace-logo-box" style="width: 4.5rem; height: 4.5rem; flex-shrink: 0; margin-right: 1.25rem; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); border-radius: 0.4rem; overflow: hidden; padding: 0.25rem; box-sizing: border-box;">\r\n        {{ logoBlock }}\r\n    </div>\r\n\r\n    <div class="marketplace-info-container" style="flex: 1; min-width: 0; padding-right: 1.5rem; box-sizing: border-box;">\r\n        <div style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem;">\r\n            <span class="marketplace-title" title="{{ name }}" style="font-size: 1.2rem; font-weight: 700; color: #fff; line-height: 1.35; white-space: normal !important; overflow: visible !important; text-overflow: unset !important; word-break: break-word !important;">{{ name }}</span>\r\n            <span style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); font-weight: 500; white-space: nowrap;">v{{ version }}</span>\r\n            <span style="font-size: 0.725rem; text-transform: uppercase; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 0.25rem; background: rgba(115, 91, 242, 0.25); color: #b4a2f8; border: 1px solid rgba(115, 91, 242, 0.4); white-space: nowrap;">{{ type }}</span>\r\n        </div>\r\n        <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.75); line-height: 1.45; word-break: break-word;">\r\n            <div style="margin-bottom: 0.25rem;"><b>Description:</b> {{ description }}</div>\r\n            <div><b>Author:</b> {{ author }}</div>\r\n        </div>\r\n    </div>\r\n    <div class="marketplace-buttons-container" style="width: auto; flex-shrink: 0; display: flex; align-items: center; gap: 0.75rem; margin-left: 1rem;">\r\n        <div class="action-buttons-container-xMVmz">\r\n            <div tabindex="-1" title="{{ actionbtnTitle }}" class="{{ actionbtnClass }} modActionBtn" data-link="{{ download }}" data-type="{{ type }}" style="cursor: pointer; user-select: none; min-width: 6.5rem; text-align: center; padding: 0.55rem 1.25rem; border-radius: 0.35rem; font-weight: 700; font-size: 0.9rem; transition: all 0.2s ease;">\r\n                <div class="label-OnWh2" style="color: white; font-weight: bold;">{{ actionbtnTitle }}</div>\r\n            </div>\r\n        </div>\r\n        {{ repoBlock }}\r\n    </div>\r\n</div>\r\n';
+  var marketplace_item_default = '<div name="{{ name }}-box" tabindex="0" class="marketplace-item-card animation-fade-in" style="width: 100%; box-sizing: border-box; margin: 0 0 1rem 0; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s, background-color 0.2s;">\n    <div class="marketplace-logo-box" style="width: 4.5rem; height: 4.5rem; flex-shrink: 0; margin-right: 1.25rem; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); border-radius: 0.4rem; overflow: hidden; padding: 0.25rem; box-sizing: border-box;">\n        {{ logoBlock }}\n    </div>\n\n    <div class="marketplace-info-container" style="flex: 1; min-width: 0; padding-right: 1.5rem; box-sizing: border-box;">\n        <div style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem;">\n            <span class="marketplace-title" title="{{ name }}" style="font-size: 1.2rem; font-weight: 700; color: #fff; line-height: 1.35; white-space: normal !important; overflow: visible !important; text-overflow: unset !important; word-break: break-word !important;">{{ name }}</span>\n            <span class="marketplace-version" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); font-weight: 500; white-space: nowrap;{{ versionStyle }}">{{ versionLabel }}</span>\n            <span style="font-size: 0.725rem; text-transform: uppercase; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 0.25rem; background: rgba(115, 91, 242, 0.25); color: #b4a2f8; border: 1px solid rgba(115, 91, 242, 0.4); white-space: nowrap;">{{ type }}</span>\n        </div>\n        <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.75); line-height: 1.45; word-break: break-word;">\n            <div style="margin-bottom: 0.25rem;"><b>Description:</b> {{ description }}</div>\n            <div><b>Author:</b> {{ author }}</div>\n        </div>\n    </div>\n    <div class="marketplace-buttons-container" style="width: auto; flex-shrink: 0; display: flex; align-items: center; gap: 0.75rem; margin-left: 1rem;">\n        <div class="action-buttons-container-xMVmz">\n            <div tabindex="-1" title="{{ actionbtnTitle }}" class="{{ actionbtnClass }} modActionBtn" data-link="{{ download }}" data-type="{{ type }}" style="cursor: pointer; user-select: none; min-width: 6.5rem; text-align: center; padding: 0.55rem 1.25rem; border-radius: 0.35rem; font-weight: 700; font-size: 0.9rem; transition: all 0.2s ease;">\n                <div class="label-OnWh2" style="color: white; font-weight: bold;">{{ actionbtnTitle }}</div>\n            </div>\n        </div>\n        {{ repoBlock }}\n    </div>\n</div>\n';
 
   // src/components/marketplace-item/marketplaceItem.ts
-  function createMarketplaceCard(mod, type, isInstalled, onAction) {
+  function createMarketplaceCard(mod, type, isInstalled, onAction, resolvedVersion) {
     let logoBlock = "";
     if (mod.preview) {
       logoBlock = `
@@ -862,9 +862,23 @@ This will permanently remove the theme file from your themes folder.`,
     }
     const actionbtnTitle = isInstalled ? "Uninstall" : "Install";
     const actionbtnClass = isInstalled ? "uninstall-button-container-oV4Yo" : "install-button-container-yfcq5";
+    let versionLabel = "";
+    let versionStyle = "";
+    if (type === "Theme") {
+      const cleanThemeVersion = resolvedVersion ? resolvedVersion.trim().replace(/^v/i, "") : "";
+      if (cleanThemeVersion) {
+        versionLabel = `v${escapeHtml(cleanThemeVersion)}`;
+      } else {
+        versionStyle = " display: none;";
+      }
+    } else {
+      const cleanPluginVersion = (mod.version || "1.0.0").trim().replace(/^v/i, "") || "1.0.0";
+      versionLabel = `v${escapeHtml(cleanPluginVersion)}`;
+    }
     const html = TemplateCache.render(marketplace_item_default, {
       name: escapeHtml(mod.name),
-      version: escapeHtml(mod.version || "1.0.0"),
+      versionLabel,
+      versionStyle,
       type,
       description: escapeHtml(mod.description),
       author: escapeHtml(mod.author),
@@ -896,6 +910,53 @@ This will permanently remove the theme file from your themes folder.`,
     activeTheme: null
   };
   var cachedRegistry = null;
+  var themeVersionCache = /* @__PURE__ */ new Map();
+  var themeVersionInFlight = /* @__PURE__ */ new Map();
+  function extractVersionFromThemeMetadata(content) {
+    if (!content) return null;
+    const cleanedContent = content.replace(/^\uFEFF/, "");
+    const blocks = [];
+    const jsdocMatch = cleanedContent.match(/\/\*\*([\s\S]*?)\*\//);
+    if (jsdocMatch) blocks.push(jsdocMatch[1]);
+    const leadingMatch = cleanedContent.trimStart().match(/^\/\*([\s\S]*?)\*\//);
+    if (leadingMatch && leadingMatch[1] !== jsdocMatch?.[1]) {
+      blocks.push(leadingMatch[1]);
+    }
+    for (const block of blocks) {
+      const versionMatch = block.match(/@version\s+([^\n\r*]+)/i);
+      if (versionMatch && versionMatch[1]) {
+        const version = versionMatch[1].trim().replace(/^v/i, "");
+        if (version) return version;
+      }
+    }
+    return null;
+  }
+  async function fetchThemeVersionFromDownload(downloadUrl, forceRefresh = false) {
+    if (!downloadUrl) return null;
+    if (!forceRefresh && themeVersionCache.has(downloadUrl)) {
+      return themeVersionCache.get(downloadUrl) ?? null;
+    }
+    if (!forceRefresh && themeVersionInFlight.has(downloadUrl)) {
+      return themeVersionInFlight.get(downloadUrl);
+    }
+    const promise = (async () => {
+      try {
+        const res = await fetch(downloadUrl, { cache: "no-store" });
+        if (!res.ok) return null;
+        const text = await res.text();
+        const version = extractVersionFromThemeMetadata(text);
+        themeVersionCache.set(downloadUrl, version);
+        return version;
+      } catch (err) {
+        console.warn(`[Enhanced Marketplace] Failed to fetch theme metadata from ${downloadUrl}:`, err);
+        return null;
+      } finally {
+        themeVersionInFlight.delete(downloadUrl);
+      }
+    })();
+    themeVersionInFlight.set(downloadUrl, promise);
+    return promise;
+  }
   function updateMarketplaceData(data) {
     currentEnhancedData = data;
     syncMarketplaceInstalledState();
@@ -980,6 +1041,9 @@ This will permanently remove the theme file from your themes folder.`,
       return;
     }
     if (container.getAttribute("data-loading") === "true") return;
+    if (forceReload) {
+      themeVersionCache.clear();
+    }
     container.setAttribute("data-loading", "true");
     container.removeAttribute("data-loaded");
     container.innerHTML = getMarketplaceTabHtml();
@@ -1060,8 +1124,20 @@ This will permanently remove the theme file from your themes folder.`,
       for (const theme of registry.themes) {
         const fileName = getFileNameFromUrl(theme.download);
         const installed = isThemeInstalled(fileName);
-        const card = createMarketplaceCard(theme, "Theme", installed, handleAction);
+        const hasCachedVersion = themeVersionCache.has(theme.download);
+        const cachedVersion = hasCachedVersion ? themeVersionCache.get(theme.download) ?? null : null;
+        const card = createMarketplaceCard(theme, "Theme", installed, handleAction, cachedVersion);
         modsList.appendChild(card);
+        if (!hasCachedVersion && theme.download) {
+          fetchThemeVersionFromDownload(theme.download).then((version) => {
+            if (!version || !document.body.contains(card)) return;
+            const versionEl = card.querySelector(".marketplace-version");
+            if (versionEl) {
+              versionEl.textContent = `v${version}`;
+              versionEl.style.display = "";
+            }
+          });
+        }
       }
       container.setAttribute("data-loaded", "true");
     } catch (err) {
@@ -1190,8 +1266,17 @@ This will permanently remove the theme file from your themes folder.`,
         const dl = (m.download || "").toLowerCase();
         return dl.endsWith(fnLower) || dl.includes(`/${baseName}.`);
       });
-      if (found && found.version && found.download) {
-        return { version: found.version, download: found.download };
+      if (found && found.download) {
+        if (type === "theme") {
+          const themeVersion = await fetchThemeVersionFromDownload(found.download);
+          if (themeVersion) {
+            return { version: themeVersion, download: found.download };
+          }
+          return null;
+        }
+        if (found.version) {
+          return { version: found.version, download: found.download };
+        }
       }
     } catch (err) {
       console.warn("[Enhanced Update] Failed to check registry version:", err);
@@ -1763,7 +1848,7 @@ Would you like to open the GitHub Releases page to download the update?`;
   }
 
   // src/components/plugin-item/plugin-item.html
-  var plugin_item_default = '<div name="{{ fileName }}-box" tabindex="0" class="addon-whmdO animation-fade-in addon-container-lC5KN button-container-zVLH6" style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s;">\r\n    <div class="info-container-AdMB6" style="flex: 1; min-width: 0; padding-right: 1.5rem;">\r\n        <div class="name-container-qIAg8" title="{{ name }}" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem;">{{ name }}</div>\r\n        <div class="version-container-zdPyN" title="{{ version }}" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); margin-bottom: 0.4rem;">{{ version }}</div>\r\n        <div class="description-container-v7Jhe" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); line-height: 1.4;">\r\n            {{ descriptionBlock }}\r\n            {{ authorBlock }}\r\n        </div>\r\n    </div>\r\n    <div class="buttons-container-g0xXr" style="width: auto; flex-shrink: 0;">\r\n        <div class="action-buttons-container-xMVmz" style="display: flex; align-items: center;">\r\n            <div tabindex="-1" class="install-button-container-yfcq5 button-container-zVLH6 plugin-update-btn" style="background-color: #f5bf42; color: #16152b; display: none; margin-right: 1.2rem; cursor: pointer; user-select: none; padding: 0.5rem 1.1rem; border-radius: 0.35rem; font-weight: 700;" id="{{ fileName }}-update" title="Update available">\r\n                <div class="label-OnWh2" style="color: #16152b; font-weight: bold;">Update</div>\r\n            </div>\r\n\r\n            <div tabindex="-1" id="{{ fileName }}-settings" title="Plugin settings" class="nav-tab-button-tW6qT nav-tab-button-container-dYhs0 button-container-zVLH6 plugin-settings-btn" style="display: {{ settingsDisplay }}; cursor: pointer; margin-right: 0.75rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); transition: background-color 0.2s;">\r\n                <svg class="icon-TzPrK" style="width: 1.15rem; height: 1.15rem; fill: currentcolor;" viewBox="0 0 512 512">\r\n                    <path d="M464 250c0-2.7-1-5-3-7l-6-3-26-4-3-2-2-3-1-9v-4l2-2 23-13 5-5v-8l-4-11c-.7-2-2.3-3.7-5-5-2-1.3-4.3-1.7-7-.7l-25 5-4-1-2-2-5-8c-.6-1.1-.8-2.4-.6-3.7.2-1.3.7-2.4 1.6-3.3l17-19 2-7c.7-2.7 0-5-2-7l-7-9c-1.6-2.1-4-3.5-6.6-3.9-2.6-.4-5.3.3-7.4 1.9l-22 13c-.9.9-2.2 1.4-3.5 1.4s-2.6-.5-3.5-1.4l-7-7-2-2v-4l9-24c1.1-2.3 1.3-4.9.6-7.3-.8-2.4-2.4-4.4-4.6-5.7l-10-6c-2-2-4.3-2.3-7-1-2.7.7-5 2-7 4l-16 20-2 2h-4l-9-4-3-2-1-3v-26c.7-2.7 0-5-2-7-1.3-2.7-3.3-4-6-4l-12-2c-2-.7-4.3-.4-7 1l-4 6-9 25-2 3h-13c-1.3.7-2.3.4-3-1l-2-2-9-25c0-2-1.3-4-4-6l-7-1-12 2c-2.7 0-4.7 1.3-6 4-2 2-2.7 4.3-2 7v26l-1 3-3 2-9 4c-2.7.7-4.7 0-6-2l-17-20c-.7-2-2.7-3.3-6-4-2-.7-4.3-.3-7 1l-10 6-5 5v8l10 24v3c0 2-.7 3-2 3l-7 6c-.4.5-.9 1-1.5 1.3-.6.3-1.2.6-1.8.7-.7.1-1.3.1-2-.1-.6-.2-1.2-.5-1.7-.8l-22-14-7-1-7 3-7 9c-1.8 1.9-2.9 4.4-2.9 7s1 5.1 2.9 7l18 20 1 3-1 3-5 9-2 2h-4l-25-4c-2.4-.7-4.9-.4-7.2.7s-3.9 3.1-4.8 5.3l-4 11v7c1.3 3.3 3 5.3 5 6l23 13 2 2v5l-2 8-1 3-3 2-26 4c-2.5.2-4.8 1.4-6.4 3.3-1.7 1.8-2.6 4.3-2.6 6.7v12c0 2.5.9 4.9 2.6 6.7s3.9 3.1 6.4 3.3l26 4 3 2 1 3 2 9v4l-2 2-23 13-5 5v8l4 11c.7 2 2.3 3.7 5 5 2 1.3 4.3 1.7 7 .7l25-5 4 1 2 2 5 8c.7 1.1 1.1 2.3 1.1 3.6 0 1.3-.4 2.5-1.1 3.5l-17 20c-1.7 1.7-2.7 3.9-2.9 6.3-.2 2.4.5 4.8 1.9 6.7l7 9c1.6 2.1 4 3.5 6.6 3.9 2.6.4 5.3-.4 7.4-2l22-13c1.1-.8 2.4-1.1 3.7-.9 1.3.2 2.5.9 3.3 1.9l7 6 2 3v3l-9 24c-1.1 2.3-1.3 4.9-.5 7.3.7 2.4 2.4 4.4 4.5 5.7l10 6c1.1.7 2.4 1.2 3.7 1.5 1.3.2 2.7.2 4-.1 1.3-.3 2.6-.8 3.6-1.6 1.1-.8 2-1.7 2.7-2.8l16-20 5-2 10 4 3 2 1 3v26c-.7 2.7 0 5 2 7 1.3 2.7 3.3 4 6 4l12 2c2.3.2 4.7-.4 6.6-1.7 2-1.3 3.5-3.1 4.4-5.3l9-25 2-2c1.3-1.3 2.3-1.7 3-1.3h10l3 1 2 2 9 25c.7 2 2 3.7 4 5 1.9 1.3 4.3 1.9 6.7 1.7l12-2c2.7-.7 4.7-2 6-4.7.7-2.7.7-5.3.7-7.3v-26l1-3 3-2 9-3c3.3-.7 5.3-.3 6 1.3l17 20c1.4 2 3.5 3.4 5.9 4 2.4.6 4.9.2 7.1-1l10-6 5-5v-8l-10-24v-3l2-3 7-6 4-2 3 1 22 13c2.7 1.3 5 1 7-1l7-9c1-1.3 1.7-2.7 2-4.3.3-1.6.2-3.3-.4-4.8l-17-20-2-3 1-4 5-9 3-2 3-1 25 5c1.2.5 2.6.7 3.9.7 1.3 0 2.6-.4 3.8-1 1.2-.6 2.3-1.4 3.2-2.3.9-1 1.6-2.1 2.1-3.4l3-11v-8l-5-5-23-13-3-2v-5l2-8 1-3 3-2 26-4c2.5-.2 4.8-1.4 6.5-3.3 1.6-1.8 2.5-4.3 2.5-6.7v-12zm-282 94c-1.3 2-3.3 3.7-6 5-2 1.4-4.3 2.3-6.8 2.6-2.4.3-4.9 0-7.2-.8l-6-4c-22.7-24.9-35.3-57.3-35.3-91s12.6-66.1 35.3-91l7-4 7-1c2.5.3 4.9 1.2 7 2.6 2.1 1.4 3.8 3.3 4.9 5.4l46 80c1.4 2.4 2.1 5.2 2.1 8s-.7 5.6-2.1 8l-46 80zm74 47c-10 0-19.3-1-28-3-3.7-.7-7-2.7-9.4-5.6-2.4-2.9-3.7-6.6-3.6-10.3l2-7 46-80 6-6 8-2h92c2.5-.1 5 .4 7.2 1.5s4.2 2.6 5.8 4.6l3 7 1 7c-17 55-68 94-128 94zm7-164l-45-80-2-7c-1.1-3.6 0-7.2 2.2-10.1 2.2-2.9 5.3-5 8.8-5.9 32.7-6.8 66.7-1.2 95.5 15.6 28.8 16.8 50.4 43.7 60.5 75.5l1 7c-.7 3.7-2.7 7-5.6 9.4-2.9 2.4-6.6 3.7-10.4 3.7h-92c-2.7.7-5.3 0-8-2l-6-6.2z"></path>\r\n                </svg>\r\n            </div>\r\n\r\n            <div tabindex="0" id="{{ fileName }}-delete" title="Delete plugin" class="button-container-zVLH6 plugin-delete-btn" style="display: flex; cursor: pointer; margin-right: 0.9rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); transition: background-color 0.2s, color 0.2s;">\r\n                <svg style="width: 1.05rem; height: 1.05rem; fill: currentcolor;" viewBox="0 0 24 24">\r\n                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>\r\n                </svg>\r\n            </div>\r\n\r\n            <div tabindex="-1" class="toggle-container-lZfHP button-container-zVLH6 plugin-toggle {{ checkedClass }}" data-plugin="{{ fileName }}" style="outline: none; cursor: pointer;">\r\n                <div class="toggle-toOWM"></div>\r\n            </div>\r\n        </div>\r\n    </div>\r\n</div>\r\n';
+  var plugin_item_default = '<div name="{{ fileName }}-box" tabindex="0" class="addon-whmdO animation-fade-in addon-container-lC5KN button-container-zVLH6" style="margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; padding: 1.25rem; border-radius: 0.5rem; background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); transition: border-color 0.2s;">\n    <div class="info-container-AdMB6" style="flex: 1; min-width: 0; padding-right: 1.5rem;">\n        <div class="name-container-qIAg8" title="{{ name }}" style="font-size: 1.15rem; font-weight: 700; color: #fff; margin-bottom: 0.2rem;">{{ name }}</div>\n        <div class="version-container-zdPyN" title="{{ version }}" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); margin-bottom: 0.4rem;">{{ version }}</div>\n        <div class="description-container-v7Jhe" style="font-size: 0.85rem; color: rgba(255, 255, 255, 0.7); line-height: 1.4;">\n            {{ descriptionBlock }}\n            {{ authorBlock }}\n        </div>\n    </div>\n    <div class="buttons-container-g0xXr" style="width: auto; flex-shrink: 0;">\n        <div class="action-buttons-container-xMVmz" style="display: flex; align-items: center;">\n            <div tabindex="-1" class="install-button-container-yfcq5 button-container-zVLH6 plugin-update-btn" style="background-color: #f5bf42; color: #16152b; display: none; margin-right: 1.2rem; cursor: pointer; user-select: none; padding: 0.5rem 1.1rem; border-radius: 0.35rem; font-weight: 700;" id="{{ fileName }}-update" title="Update available">\n                <div class="label-OnWh2" style="color: #16152b; font-weight: bold;">Update</div>\n            </div>\n\n            <div tabindex="-1" id="{{ fileName }}-settings" title="Plugin settings" class="nav-tab-button-tW6qT nav-tab-button-container-dYhs0 button-container-zVLH6 plugin-settings-btn" style="display: {{ settingsDisplay }}; cursor: pointer; margin-right: 0.75rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); transition: background-color 0.2s;">\n                <svg class="icon-TzPrK" style="width: 1.15rem; height: 1.15rem; fill: currentcolor;" viewBox="0 0 512 512">\n                    <path d="M464 250c0-2.7-1-5-3-7l-6-3-26-4-3-2-2-3-1-9v-4l2-2 23-13 5-5v-8l-4-11c-.7-2-2.3-3.7-5-5-2-1.3-4.3-1.7-7-.7l-25 5-4-1-2-2-5-8c-.6-1.1-.8-2.4-.6-3.7.2-1.3.7-2.4 1.6-3.3l17-19 2-7c.7-2.7 0-5-2-7l-7-9c-1.6-2.1-4-3.5-6.6-3.9-2.6-.4-5.3.3-7.4 1.9l-22 13c-.9.9-2.2 1.4-3.5 1.4s-2.6-.5-3.5-1.4l-7-7-2-2v-4l9-24c1.1-2.3 1.3-4.9.6-7.3-.8-2.4-2.4-4.4-4.6-5.7l-10-6c-2-2-4.3-2.3-7-1-2.7.7-5 2-7 4l-16 20-2 2h-4l-9-4-3-2-1-3v-26c.7-2.7 0-5-2-7-1.3-2.7-3.3-4-6-4l-12-2c-2-.7-4.3-.4-7 1l-4 6-9 25-2 3h-13c-1.3.7-2.3.4-3-1l-2-2-9-25c0-2-1.3-4-4-6l-7-1-12 2c-2.7 0-4.7 1.3-6 4-2 2-2.7 4.3-2 7v26l-1 3-3 2-9 4c-2.7.7-4.7 0-6-2l-17-20c-.7-2-2.7-3.3-6-4-2-.7-4.3-.3-7 1l-10 6-5 5v8l10 24v3c0 2-.7 3-2 3l-7 6c-.4.5-.9 1-1.5 1.3-.6.3-1.2.6-1.8.7-.7.1-1.3.1-2-.1-.6-.2-1.2-.5-1.7-.8l-22-14-7-1-7 3-7 9c-1.8 1.9-2.9 4.4-2.9 7s1 5.1 2.9 7l18 20 1 3-1 3-5 9-2 2h-4l-25-4c-2.4-.7-4.9-.4-7.2.7s-3.9 3.1-4.8 5.3l-4 11v7c1.3 3.3 3 5.3 5 6l23 13 2 2v5l-2 8-1 3-3 2-26 4c-2.5.2-4.8 1.4-6.4 3.3-1.7 1.8-2.6 4.3-2.6 6.7v12c0 2.5.9 4.9 2.6 6.7s3.9 3.1 6.4 3.3l26 4 3 2 1 3 2 9v4l-2 2-23 13-5 5v8l4 11c.7 2 2.3 3.7 5 5 2 1.3 4.3 1.7 7 .7l25-5 4 1 2 2 5 8c.7 1.1 1.1 2.3 1.1 3.6 0 1.3-.4 2.5-1.1 3.5l-17 20c-1.7 1.7-2.7 3.9-2.9 6.3-.2 2.4.5 4.8 1.9 6.7l7 9c1.6 2.1 4 3.5 6.6 3.9 2.6.4 5.3-.4 7.4-2l22-13c1.1-.8 2.4-1.1 3.7-.9 1.3.2 2.5.9 3.3 1.9l7 6 2 3v3l-9 24c-1.1 2.3-1.3 4.9-.5 7.3.7 2.4 2.4 4.4 4.5 5.7l10 6c1.1.7 2.4 1.2 3.7 1.5 1.3.2 2.7.2 4-.1 1.3-.3 2.6-.8 3.6-1.6 1.1-.8 2-1.7 2.7-2.8l16-20 5-2 10 4 3 2 1 3v26c-.7 2.7 0 5 2 7 1.3 2.7 3.3 4 6 4l12 2c2.3.2 4.7-.4 6.6-1.7 2-1.3 3.5-3.1 4.4-5.3l9-25 2-2c1.3-1.3 2.3-1.7 3-1.3h10l3 1 2 2 9 25c.7 2 2 3.7 4 5 1.9 1.3 4.3 1.9 6.7 1.7l12-2c2.7-.7 4.7-2 6-4.7.7-2.7.7-5.3.7-7.3v-26l1-3 3-2 9-3c3.3-.7 5.3-.3 6 1.3l17 20c1.4 2 3.5 3.4 5.9 4 2.4.6 4.9.2 7.1-1l10-6 5-5v-8l-10-24v-3l2-3 7-6 4-2 3 1 22 13c2.7 1.3 5 1 7-1l7-9c1-1.3 1.7-2.7 2-4.3.3-1.6.2-3.3-.4-4.8l-17-20-2-3 1-4 5-9 3-2 3-1 25 5c1.2.5 2.6.7 3.9.7 1.3 0 2.6-.4 3.8-1 1.2-.6 2.3-1.4 3.2-2.3.9-1 1.6-2.1 2.1-3.4l3-11v-8l-5-5-23-13-3-2v-5l2-8 1-3 3-2 26-4c2.5-.2 4.8-1.4 6.5-3.3 1.6-1.8 2.5-4.3 2.5-6.7v-12zm-282 94c-1.3 2-3.3 3.7-6 5-2 1.4-4.3 2.3-6.8 2.6-2.4.3-4.9 0-7.2-.8l-6-4c-22.7-24.9-35.3-57.3-35.3-91s12.6-66.1 35.3-91l7-4 7-1c2.5.3 4.9 1.2 7 2.6 2.1 1.4 3.8 3.3 4.9 5.4l46 80c1.4 2.4 2.1 5.2 2.1 8s-.7 5.6-2.1 8l-46 80zm74 47c-10 0-19.3-1-28-3-3.7-.7-7-2.7-9.4-5.6-2.4-2.9-3.7-6.6-3.6-10.3l2-7 46-80 6-6 8-2h92c2.5-.1 5 .4 7.2 1.5s4.2 2.6 5.8 4.6l3 7 1 7c-17 55-68 94-128 94zm7-164l-45-80-2-7c-1.1-3.6 0-7.2 2.2-10.1 2.2-2.9 5.3-5 8.8-5.9 32.7-6.8 66.7-1.2 95.5 15.6 28.8 16.8 50.4 43.7 60.5 75.5l1 7c-.7 3.7-2.7 7-5.6 9.4-2.9 2.4-6.6 3.7-10.4 3.7h-92c-2.7.7-5.3 0-8-2l-6-6.2z"></path>\n                </svg>\n            </div>\n\n            <div tabindex="0" id="{{ fileName }}-delete" title="Delete plugin" class="button-container-zVLH6 plugin-delete-btn" style="display: flex; cursor: pointer; margin-right: 0.9rem; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); transition: background-color 0.2s, color 0.2s;">\n                <svg style="width: 1.05rem; height: 1.05rem; fill: currentcolor;" viewBox="0 0 24 24">\n                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>\n                </svg>\n            </div>\n\n            <div tabindex="-1" class="toggle-container-lZfHP button-container-zVLH6 plugin-toggle {{ checkedClass }}" data-plugin="{{ fileName }}" style="outline: none; cursor: pointer;">\n                <div class="toggle-toOWM"></div>\n            </div>\n        </div>\n    </div>\n</div>\n';
 
   // src/components/plugin-item/pluginItem.ts
   function createPluginCard(fileName, meta, isEnabled, onToggle) {
@@ -3270,6 +3355,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
 #enhanced[data-show="themes"] > .enhanced-category:not([data-category="themes"]),
 #enhanced[data-show="plugins"] > .enhanced-category:not([data-category="plugins"]),
 #enhanced[data-show="marketplace"] > .enhanced-category:not([data-category="marketplace"]),
+#enhanced[data-show="player"] > .enhanced-category:not([data-category="player"]),
 #enhanced[data-show="server"] > .enhanced-category:not([data-category="server"]),
 #enhanced[data-show="updates"] > .enhanced-category:not([data-category="updates"]) { display: none; }
 
@@ -3336,6 +3422,353 @@ Please place server.js in the folder or start Stremio Service. Would you like to
   var UPDATE_ICON = `<svg class="icon-TzPrK" style="width: 1.25rem; height: 1.25rem; fill: currentcolor;" viewBox="0 0 24 24">
     <path d="M21 10.12h-6.78l2.74-2.82c-2.73-2.7-7.15-2.8-9.88-.1-2.73 2.71-2.73 7.08 0 9.79s7.15 2.71 9.88 0C18.32 15.65 19 14.08 19 12.1h2c0 1.98-.88 4.55-2.64 6.29-3.51 3.48-9.21 3.48-12.72 0-3.5-3.47-3.53-9.11-.02-12.58s9.14-3.47 12.65 0L21 3v7.12zM12.5 8v4.25l3.5 2.08-.72 1.21L11 13V8h1.5z"></path>
 </svg>`;
+  var PLAYER_ICON = `<svg class="icon-TzPrK" style="width: 1.25rem; height: 1.25rem; fill: currentcolor;" viewBox="0 0 24 24">
+    <path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path>
+</svg>`;
+
+  // src/player/thumbnailPreview.ts
+  var MAX_JS_CACHE_ENTRIES = 150;
+  var REQUEST_THROTTLE_MS = 80;
+  var NORMAL_PREVIEW_WIDTH = 240;
+  var PIP_PREVIEW_WIDTH = 160;
+  var previewEnabled = true;
+  var initialized = false;
+  var currentStreamKey = "";
+  var thumbCache = /* @__PURE__ */ new Map();
+  var previewEl = null;
+  var frameWrapEl = null;
+  var imgEl = null;
+  var timeEl = null;
+  var isVisible = false;
+  var draggingSlider = null;
+  var lastHoveredTime = -1;
+  var lastPreviewWidth = NORMAL_PREVIEW_WIDTH;
+  var lastRequestSentAt = 0;
+  var trailingTimer = null;
+  var pendingTrailingRequest = null;
+  var lastDisplayFrameSize = null;
+  function isThumbnailPreviewEnabled() {
+    return previewEnabled;
+  }
+  function updateThumbnailPreviewData(data) {
+    if (typeof data.thumbnailPreview === "boolean") {
+      previewEnabled = data.thumbnailPreview;
+      if (!previewEnabled) {
+        hidePreview();
+        thumbCache.clear();
+      }
+      syncThumbnailPreviewToggle();
+    }
+  }
+  function syncThumbnailPreviewToggle() {
+    const toggle = document.getElementById("thumbnailpreviewToggle");
+    if (!toggle) return;
+    toggle.classList.toggle("checked", previewEnabled);
+    toggle.setAttribute("aria-checked", previewEnabled ? "true" : "false");
+  }
+  function getDurationSeconds() {
+    const coreDur = Number(PermanentCore.getState?.("player")?.duration || 0) / 1e3;
+    if (Number.isFinite(coreDur) && coreDur > 0) return coreDur;
+    const bridge = document.getElementById("stremio-shell-bridge-video");
+    const bridgeDur = Number(bridge?.duration || 0);
+    return Number.isFinite(bridgeDur) && bridgeDur > 0 ? bridgeDur : 0;
+  }
+  function getCurrentStreamKey() {
+    const state = PermanentCore.getState?.("player");
+    const coreUrl = state?.selected?.stream?.url;
+    if (coreUrl) return String(coreUrl);
+    const bridge = document.getElementById("stremio-shell-bridge-video");
+    return bridge?.getAttribute("src") || "";
+  }
+  function ensureStreamCacheScope() {
+    const key = getCurrentStreamKey();
+    if (key && key !== currentStreamKey) {
+      currentStreamKey = key;
+      thumbCache.clear();
+      lastDisplayFrameSize = null;
+      if (imgEl) {
+        imgEl.removeAttribute("src");
+        imgEl.style.opacity = "0";
+      }
+    }
+    return currentStreamKey;
+  }
+  function quantizeTime(timeSec, duration) {
+    const step = duration > 0 && duration <= 120 ? 0.5 : 1;
+    return Math.round(timeSec / step) * step;
+  }
+  function makeCacheKey(streamKey, qTime, maxWidth) {
+    return `${streamKey}|${qTime.toFixed(1)}|${maxWidth}`;
+  }
+  function formatTimestamp(seconds) {
+    const total = Math.max(0, Math.floor(seconds));
+    const hrs = Math.floor(total / 3600);
+    const mins = Math.floor(total % 3600 / 60);
+    const secs = total % 60;
+    const pad = (n) => n < 10 ? `0${n}` : `${n}`;
+    if (hrs > 0) {
+      return `${hrs}:${pad(mins)}:${pad(secs)}`;
+    }
+    return `${mins}:${pad(secs)}`;
+  }
+  function ensurePreviewElement() {
+    if (!previewEl) {
+      previewEl = document.createElement("div");
+      previewEl.id = "stremio-enhanced-thumb-preview";
+      Object.assign(previewEl.style, {
+        position: "fixed",
+        left: "0px",
+        bottom: "0px",
+        display: "none",
+        flexDirection: "column",
+        alignItems: "center",
+        pointerEvents: "none",
+        zIndex: "2147483000",
+        backgroundColor: "rgba(12, 11, 17, 0.94)",
+        border: "1px solid rgba(255, 255, 255, 0.16)",
+        borderRadius: "10px",
+        boxShadow: "0 12px 32px rgba(0, 0, 0, 0.65)",
+        overflow: "hidden",
+        backdropFilter: "blur(10px)",
+        userSelect: "none"
+      });
+      frameWrapEl = document.createElement("div");
+      Object.assign(frameWrapEl.style, {
+        width: `${NORMAL_PREVIEW_WIDTH}px`,
+        height: `${Math.round(NORMAL_PREVIEW_WIDTH * 9 / 16)}px`,
+        backgroundColor: "#09090d",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        position: "relative"
+      });
+      imgEl = document.createElement("img");
+      imgEl.alt = "Thumbnail preview";
+      Object.assign(imgEl.style, {
+        display: "block",
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        opacity: "0",
+        transition: "opacity 0.1s ease"
+      });
+      timeEl = document.createElement("div");
+      Object.assign(timeEl.style, {
+        width: "100%",
+        textAlign: "center",
+        padding: "5px 8px",
+        fontSize: "0.85rem",
+        fontWeight: "600",
+        fontVariantNumeric: "tabular-nums",
+        color: "rgba(255, 255, 255, 0.95)",
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+        boxSizing: "border-box",
+        lineHeight: "1.2"
+      });
+      timeEl.textContent = "0:00";
+      frameWrapEl.appendChild(imgEl);
+      previewEl.appendChild(frameWrapEl);
+      previewEl.appendChild(timeEl);
+    }
+    const playerContainer = document.querySelector('[class*="player-container"]');
+    const targetParent = playerContainer || document.body;
+    if (targetParent && previewEl.parentElement !== targetParent) {
+      targetParent.appendChild(previewEl);
+    }
+  }
+  function applyThumbToDom(thumb) {
+    if (!imgEl || !frameWrapEl) return;
+    lastDisplayFrameSize = { width: thumb.width, height: thumb.height };
+    frameWrapEl.style.width = `${thumb.width}px`;
+    frameWrapEl.style.height = `${thumb.height}px`;
+    if (imgEl.src !== thumb.dataUrl) {
+      imgEl.src = thumb.dataUrl;
+    }
+    imgEl.style.opacity = "1";
+  }
+  function hidePreview() {
+    isVisible = false;
+    lastHoveredTime = -1;
+    pendingTrailingRequest = null;
+    if (trailingTimer) {
+      clearTimeout(trailingTimer);
+      trailingTimer = null;
+    }
+    if (previewEl) {
+      previewEl.style.display = "none";
+    }
+  }
+  function dispatchThumbnailRequest(time, maxWidth) {
+    const now = Date.now();
+    const elapsed = now - lastRequestSentAt;
+    if (elapsed >= REQUEST_THROTTLE_MS) {
+      lastRequestSentAt = now;
+      pendingTrailingRequest = null;
+      if (trailingTimer) {
+        clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
+      postEnhancedMessage("requestThumbnail", { time, maxWidth });
+      return;
+    }
+    pendingTrailingRequest = { time, maxWidth };
+    if (!trailingTimer) {
+      trailingTimer = setTimeout(() => {
+        trailingTimer = null;
+        if (!isVisible || !previewEnabled || !pendingTrailingRequest) return;
+        const req = pendingTrailingRequest;
+        pendingTrailingRequest = null;
+        lastRequestSentAt = Date.now();
+        postEnhancedMessage("requestThumbnail", { time: req.time, maxWidth: req.maxWidth });
+      }, REQUEST_THROTTLE_MS - elapsed);
+    }
+  }
+  function findSeekSlider(target) {
+    if (!(target instanceof Element)) return null;
+    return target.closest('[class*="seek-bar-container-"] [class*="slider-container-"]');
+  }
+  function isLiveSeekBar(slider) {
+    if (slider.classList.contains("disabled")) return true;
+    const seekContainer = slider.closest('[class*="seek-bar-container-"]');
+    if (!seekContainer) return true;
+    return seekContainer.querySelector('[class*="live-badge-layer-"]') !== null;
+  }
+  function updatePreviewAtPointer(slider, clientX) {
+    if (!previewEnabled || isLiveSeekBar(slider)) {
+      hidePreview();
+      return;
+    }
+    const duration = getDurationSeconds();
+    if (!Number.isFinite(duration) || duration <= 0) {
+      hidePreview();
+      return;
+    }
+    const rect = slider.getBoundingClientRect();
+    if (rect.width <= 0) {
+      hidePreview();
+      return;
+    }
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const targetTime = ratio * duration;
+    const isPip = document.documentElement.classList.contains("stremio-pip-mode");
+    const previewW = isPip ? PIP_PREVIEW_WIDTH : NORMAL_PREVIEW_WIDTH;
+    lastPreviewWidth = previewW;
+    lastHoveredTime = targetTime;
+    ensurePreviewElement();
+    if (!previewEl || !frameWrapEl || !imgEl || !timeEl) return;
+    const streamKey = ensureStreamCacheScope();
+    const qTime = quantizeTime(targetTime, duration);
+    const cacheKey = makeCacheKey(streamKey, qTime, previewW);
+    const cached = thumbCache.get(cacheKey);
+    if (cached) {
+      applyThumbToDom(cached);
+    } else {
+      const defaultH = lastDisplayFrameSize ? Math.round(previewW * lastDisplayFrameSize.height / lastDisplayFrameSize.width) : Math.round(previewW * 9 / 16);
+      frameWrapEl.style.width = `${previewW}px`;
+      frameWrapEl.style.height = `${defaultH}px`;
+      if (!imgEl.getAttribute("src")) {
+        imgEl.style.opacity = "0";
+      }
+      dispatchThumbnailRequest(targetTime, previewW);
+    }
+    timeEl.textContent = formatTimestamp(targetTime);
+    const cardWidth = Number.parseFloat(frameWrapEl.style.width) || previewW;
+    const clampedLeft = Math.min(
+      window.innerWidth - cardWidth - 12,
+      Math.max(12, clientX - cardWidth / 2)
+    );
+    const bottomOffset = Math.max(12, window.innerHeight - rect.top + 14);
+    previewEl.style.left = `${Math.round(clampedLeft)}px`;
+    previewEl.style.bottom = `${Math.round(bottomOffset)}px`;
+    previewEl.style.display = "flex";
+    isVisible = true;
+  }
+  function setupThumbnailPreview() {
+    if (initialized) return;
+    initialized = true;
+    window.__receiveThumbnailPreview = function(payload) {
+      if (!payload || !payload.dataUrl || !Number.isFinite(payload.time)) return;
+      const duration = getDurationSeconds();
+      const streamKey = ensureStreamCacheScope();
+      const widthKey = payload.width || lastPreviewWidth || NORMAL_PREVIEW_WIDTH;
+      const qTime = quantizeTime(payload.time, duration);
+      const cacheKey = makeCacheKey(streamKey, qTime, widthKey);
+      if (thumbCache.size >= MAX_JS_CACHE_ENTRIES && !thumbCache.has(cacheKey)) {
+        const oldest = thumbCache.keys().next().value;
+        if (oldest !== void 0) thumbCache.delete(oldest);
+      }
+      const entry = {
+        dataUrl: payload.dataUrl,
+        width: payload.width || NORMAL_PREVIEW_WIDTH,
+        height: payload.height || Math.round(NORMAL_PREVIEW_WIDTH * 9 / 16)
+      };
+      thumbCache.set(cacheKey, entry);
+      if (isVisible && previewEnabled && lastHoveredTime >= 0) {
+        const delta = Math.abs(payload.time - lastHoveredTime);
+        const maxTolerance = Math.max(2.5, duration * 0.015);
+        if (delta <= maxTolerance || !imgEl?.getAttribute("src")) {
+          applyThumbToDom(entry);
+        }
+      }
+    };
+    document.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const slider = findSeekSlider(e.target);
+      if (slider) {
+        draggingSlider = slider;
+        updatePreviewAtPointer(slider, e.clientX);
+      }
+    }, true);
+    document.addEventListener("pointermove", (e) => {
+      if (!previewEnabled) {
+        if (isVisible) hidePreview();
+        return;
+      }
+      if (draggingSlider) {
+        if (!document.body.contains(draggingSlider)) {
+          draggingSlider = null;
+          hidePreview();
+          return;
+        }
+        updatePreviewAtPointer(draggingSlider, e.clientX);
+        return;
+      }
+      const slider = findSeekSlider(e.target);
+      if (slider) {
+        updatePreviewAtPointer(slider, e.clientX);
+      } else if (isVisible) {
+        hidePreview();
+      }
+    }, true);
+    window.addEventListener("pointerup", (e) => {
+      if (!draggingSlider) return;
+      const hovered = findSeekSlider(e.target);
+      draggingSlider = null;
+      if (!hovered) {
+        hidePreview();
+      }
+    }, true);
+    document.addEventListener("mouseleave", () => {
+      if (!draggingSlider && isVisible) {
+        hidePreview();
+      }
+    });
+    window.addEventListener("blur", () => {
+      draggingSlider = null;
+      hidePreview();
+    });
+    const onRouteChange = () => {
+      const inPlayer = window.location.hash.startsWith("#/player") || document.querySelector('[class*="player-container"]') !== null;
+      if (!inPlayer) {
+        draggingSlider = null;
+        hidePreview();
+      }
+    };
+    window.addEventListener("hashchange", onRouteChange);
+    window.addEventListener("popstate", onRouteChange);
+  }
 
   // src/components/settings/settingsInjector.ts
   var SELECTORS = {
@@ -3449,6 +3882,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
         { id: "themes", label: "Themes", icon: THEME_ICON },
         { id: "plugins", label: "Plugins", icon: PLUGIN_ICON },
         { id: "marketplace", label: "Marketplace", icon: MARKETPLACE_ICON },
+        { id: "player", label: "Player", icon: PLAYER_ICON },
         { id: "server", label: "Streaming Server", icon: SERVER_ICON },
         { id: "updates", label: "Client Updates", icon: UPDATE_ICON }
       ];
@@ -3528,6 +3962,50 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       marketplaceContent.id = "enhanced-marketplace-content";
       marketplaceCategory.appendChild(marketplaceContent);
       page.appendChild(marketplaceCategory);
+      const playerCategory = createCategory("enhanced-player-category", "player", "Player", sampleGroup);
+      const thumbOption = document.createElement("div");
+      thumbOption.className = "enhanced-option";
+      const thumbHeading = document.createElement("div");
+      thumbHeading.className = "enhanced-option-heading";
+      const thumbLabel = document.createElement("div");
+      thumbLabel.className = "enhanced-option-label";
+      thumbLabel.textContent = "Thumbnail Preview (ThumbFast)";
+      const thumbDesc = document.createElement("div");
+      thumbDesc.style.cssText = "font-size: 0.85rem; color: rgba(255, 255, 255, 0.55); margin-top: 0.25rem;";
+      thumbDesc.textContent = "Show frame preview thumbnails when hovering or scrubbing the seek bar.";
+      thumbHeading.appendChild(thumbLabel);
+      thumbHeading.appendChild(thumbDesc);
+      const thumbContent = document.createElement("div");
+      thumbContent.className = "enhanced-option-content";
+      const thumbToggle = document.createElement("div");
+      thumbToggle.id = "thumbnailpreviewToggle";
+      thumbToggle.setAttribute("tabindex", "0");
+      thumbToggle.setAttribute("role", "switch");
+      thumbToggle.setAttribute("title", "Thumbnail Preview (ThumbFast)");
+      thumbToggle.className = `toggle-container-lZfHP button-container-zVLH6${isThumbnailPreviewEnabled() ? " checked" : ""}`;
+      thumbToggle.setAttribute("aria-checked", isThumbnailPreviewEnabled() ? "true" : "false");
+      thumbToggle.style.cssText = "outline: none; cursor: pointer;";
+      const thumbKnob = document.createElement("div");
+      thumbKnob.className = "toggle-toOWM";
+      thumbToggle.appendChild(thumbKnob);
+      const onToggleThumbPreview = () => {
+        const next = !isThumbnailPreviewEnabled();
+        thumbToggle.classList.toggle("checked", next);
+        thumbToggle.setAttribute("aria-checked", next ? "true" : "false");
+        postEnhancedMessage("setThumbnailPreview", { enabled: next });
+      };
+      thumbToggle.addEventListener("click", onToggleThumbPreview);
+      thumbToggle.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onToggleThumbPreview();
+        }
+      });
+      thumbContent.appendChild(thumbToggle);
+      thumbOption.appendChild(thumbHeading);
+      thumbOption.appendChild(thumbContent);
+      playerCategory.appendChild(thumbOption);
+      page.appendChild(playerCategory);
       const serverCategory = createCategory("enhanced-server-category", "server", "Streaming Server", sampleGroup);
       const openServerBtn = createOptionButton("openserverfolderBtn", "Open Server Folder");
       openServerBtn.setAttribute("title", "Open Streaming Server Folder");
@@ -3617,6 +4095,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       renderPluginsList((fileName, enabled) => {
         window.StremioEnhancedAPI.togglePlugin(fileName, enabled);
       });
+      syncThumbnailPreviewToggle();
       updateRoute();
     }).catch((err) => {
       console.warn("[Enhanced] Waiting for settings page:", err);
@@ -3657,6 +4136,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
     setupMediaCapabilitiesBridge();
     setupTransparencyBridge();
     setupVideoBridge();
+    setupThumbnailPreview();
     injectFallbackStyles();
     let currentData = {
       plugins: [],
@@ -3670,6 +4150,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       updatePluginManagerData(data);
       updateMarketplaceData(data);
       updateUpdateManagerData(data);
+      updateThumbnailPreviewData(data);
       if (data.serverStatus) {
         updateServerManagerData(data.serverStatus);
       }

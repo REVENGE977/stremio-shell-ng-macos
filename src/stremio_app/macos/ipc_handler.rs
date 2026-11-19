@@ -14,6 +14,10 @@ use crate::stremio_app::{
     ipc::{CacheDirectoryRequest, RPCRequest, RPCResponse},
     macos::app::UserEvent,
     open_media::OpenRequest,
+    stremio_player::{
+        thumbnailer::{ThumbnailCmd, DEFAULT_THUMB_MAX_WIDTH},
+        CmdVal, InMsg, InMsgArgs, InMsgFn,
+    },
     stremio_server,
 };
 
@@ -22,6 +26,8 @@ pub struct IpcContext {
     pub proxy: EventLoopProxy<UserEvent>,
     pub enhanced: Arc<Mutex<EnhancedManager>>,
     pub player_tx: flume::Sender<String>,
+    pub thumbnail_tx: flume::Sender<ThumbnailCmd>,
+    pub active_stream_url: Arc<Mutex<Option<String>>>,
     pub open_sender: flume::Sender<OpenRequest>,
     pub web_out_tx: flume::Sender<String>,
     pub local_server_url: Arc<Mutex<Option<String>>>,
@@ -209,6 +215,23 @@ fn handle_enhanced_action(action: EnhancedAction, ctx: &IpcContext) {
                 proxy.send_event(UserEvent::ExecuteScript(script)).ok();
             });
         }
+        EnhancedAction::RequestThumbnail { time, max_width } => {
+            let _ = ctx.thumbnail_tx.send(ThumbnailCmd::Request {
+                time_sec: time,
+                max_width: max_width.unwrap_or(DEFAULT_THUMB_MAX_WIDTH),
+            });
+        }
+        EnhancedAction::SetThumbnailPreview { enabled } => {
+            let mut mgr = ctx.enhanced.lock().unwrap();
+            mgr.set_thumbnail_preview(enabled);
+            let _ = ctx.thumbnail_tx.send(ThumbnailCmd::SetEnabled(enabled));
+            if enabled {
+                if let Some(url) = ctx.active_stream_url.lock().unwrap().clone() {
+                    let _ = ctx.thumbnail_tx.send(ThumbnailCmd::SetSource(Some(url)));
+                }
+            }
+            push_enhanced_data(&mgr, &ctx.proxy);
+        }
     }
 }
 
@@ -334,6 +357,21 @@ fn handle_rpc_request(msg: RPCRequest, ctx: &IpcContext) {
         Some(player_cmd) if player_cmd.starts_with("mpv-") => {
             if let Some(args) = msg.args {
                 if let Ok(resp_json) = serde_json::to_string(&args) {
+                    if let Ok(InMsg(InMsgFn::MpvCommand, InMsgArgs::Cmd(cmd))) =
+                        serde_json::from_str::<InMsg>(&resp_json)
+                    {
+                        match &cmd {
+                            CmdVal::Loadfile(url) | CmdVal::LoadfileAt(url, _) => {
+                                *ctx.active_stream_url.lock().unwrap() = Some(url.clone());
+                                let _ = ctx.thumbnail_tx.send(ThumbnailCmd::SetSource(None));
+                            }
+                            CmdVal::Stop => {
+                                *ctx.active_stream_url.lock().unwrap() = None;
+                                let _ = ctx.thumbnail_tx.send(ThumbnailCmd::SetSource(None));
+                            }
+                            _ => {}
+                        }
+                    }
                     ctx.player_tx.send(resp_json).ok();
                 }
             }
