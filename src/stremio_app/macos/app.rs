@@ -25,7 +25,11 @@ use crate::stremio_app::{
     ipc::RPCResponse,
     macos::ipc_handler::{spawn_ipc_listener, IpcContext},
     open_media::{self, OpenRequest},
-    stremio_player::{macos_gl, Player},
+    stremio_player::{
+        macos_gl,
+        thumbnailer::{spawn_thumbnail_worker, ThumbnailCmd},
+        Player,
+    },
     stremio_server::{ServerEvent, StremioServer},
     window_settings::WindowSettings,
     PipeServer,
@@ -197,6 +201,7 @@ fn navigate_webview(webview: &WebView, current_endpoint: &mut String, target_url
 fn shutdown_app(
     server: &mut StremioServer,
     player: &mut Option<Player>,
+    thumbnail_tx: &flume::Sender<ThumbnailCmd>,
     window: &Window,
     shutdown_done: &mut bool,
 ) {
@@ -204,6 +209,8 @@ fn shutdown_app(
         return;
     }
     *shutdown_done = true;
+
+    let _ = thumbnail_tx.send(ThumbnailCmd::SetEnabled(false));
 
     let scale_factor = window.scale_factor().max(1.0);
     let logical_size = window.inner_size().to_logical::<f64>(scale_factor);
@@ -462,9 +469,42 @@ pub fn run_macos(
         .clone()
         .expect("Cannot obtain communication channel for Player");
 
+    let (thumb_script_tx, thumb_script_rx) = flume::unbounded::<String>();
+    let proxy_for_thumb = proxy.clone();
+    thread::spawn(move || {
+        while let Ok(script) = thumb_script_rx.recv() {
+            proxy_for_thumb
+                .send_event(UserEvent::ExecuteScript(script))
+                .ok();
+        }
+    });
+
+    let initial_thumb_enabled = enhanced.lock().unwrap().settings.thumbnail_preview;
+    let (thumbnail_tx, _thumbnail_handle) =
+        spawn_thumbnail_worker(thumb_script_tx, initial_thumb_enabled);
+    let active_stream_url: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
     let web_out_player = web_out_tx.clone();
+    let thumbnail_tx_player = thumbnail_tx.clone();
+    let active_stream_url_player = active_stream_url.clone();
     thread::spawn(move || {
         while let Ok(msg) = player_rx.recv() {
+            if msg.contains("mpv-event-video-ready") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg) {
+                    let is_ready = v
+                        .get("args")
+                        .and_then(|a| a.get(1))
+                        .and_then(|p| p.get("ready"))
+                        .and_then(|r| r.as_bool())
+                        .unwrap_or(false);
+                    if is_ready {
+                        let url = active_stream_url_player.lock().unwrap().clone();
+                        let _ = thumbnail_tx_player.send(ThumbnailCmd::SetSource(url));
+                    }
+                }
+            } else if msg.contains("mpv-event-ended") {
+                let _ = thumbnail_tx_player.send(ThumbnailCmd::SetSource(None));
+            }
             web_out_player.send(msg).ok();
         }
     });
@@ -476,6 +516,8 @@ pub fn run_macos(
             proxy,
             enhanced,
             player_tx,
+            thumbnail_tx: thumbnail_tx.clone(),
+            active_stream_url,
             open_sender: open_sender.clone(),
             web_out_tx: web_out_tx.clone(),
             local_server_url: local_server_url.clone(),
@@ -596,7 +638,13 @@ pub fn run_macos(
                     server.stop();
                 }
                 UserEvent::Quit => {
-                    shutdown_app(&mut server, &mut player, &window, &mut shutdown_done);
+                    shutdown_app(
+                        &mut server,
+                        &mut player,
+                        &thumbnail_tx,
+                        &window,
+                        &mut shutdown_done,
+                    );
                     *control_flow = ControlFlow::Exit;
                 }
             },
@@ -608,13 +656,25 @@ pub fn run_macos(
                     macos_gl::update_mpv_layer_scale(scale_factor);
                 },
                 WindowEvent::CloseRequested => {
-                    shutdown_app(&mut server, &mut player, &window, &mut shutdown_done);
+                    shutdown_app(
+                        &mut server,
+                        &mut player,
+                        &thumbnail_tx,
+                        &window,
+                        &mut shutdown_done,
+                    );
                     *control_flow = ControlFlow::Exit;
                 }
                 _ => {}
             },
             Event::LoopDestroyed => {
-                shutdown_app(&mut server, &mut player, &window, &mut shutdown_done);
+                shutdown_app(
+                    &mut server,
+                    &mut player,
+                    &thumbnail_tx,
+                    &window,
+                    &mut shutdown_done,
+                );
             }
             _ => {}
         }
