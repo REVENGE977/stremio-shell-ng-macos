@@ -4,7 +4,7 @@ import { THEME_ICON, PLUGIN_ICON, MARKETPLACE_ICON, SERVER_ICON, UPDATE_ICON, PL
 import { renderThemesList } from '../../themes/themeManager';
 import { renderPluginsList, toggleAllPlugins } from '../../plugins/pluginManager';
 import { renderMarketplaceInline } from '../../marketplace/marketplaceManager';
-import { isThumbnailPreviewEnabled, syncThumbnailPreviewToggle } from '../../player/thumbnailPreview';
+import { isThumbnailPreviewEnabled, setThumbnailPreviewEnabledLocal, syncThumbnailPreviewToggle } from '../../player/thumbnailPreview';
 import {
     openStreamingServerFolder,
     checkServerJsUpdateAndSetup,
@@ -306,8 +306,7 @@ function buildSettingsPage(): Promise<void> {
 
             const onToggleThumbPreview = () => {
                 const next = !isThumbnailPreviewEnabled();
-                thumbToggle.classList.toggle('checked', next);
-                thumbToggle.setAttribute('aria-checked', next ? 'true' : 'false');
+                setThumbnailPreviewEnabledLocal(next);
                 postEnhancedMessage('setThumbnailPreview', { enabled: next });
             };
             thumbToggle.addEventListener('click', onToggleThumbPreview);

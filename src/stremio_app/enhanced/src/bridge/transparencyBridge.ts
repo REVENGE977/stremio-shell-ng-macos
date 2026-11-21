@@ -5,7 +5,7 @@ const modifiedElements = new Set<HTMLElement>();
 let observer: MutationObserver | null = null;
 let pollTimer: any = null;
 
-function hasPlayerHash(): boolean {
+export function hasPlayerHash(): boolean {
     const hash = window.location.hash || '';
     return hash.startsWith('#/player') || hash.includes('/player/');
 }

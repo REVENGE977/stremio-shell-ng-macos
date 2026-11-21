@@ -1,5 +1,5 @@
 import { PermanentCore } from '../core/permanentCore';
-import { enforceTransparency, isPlayerRoute } from './transparencyBridge';
+import { enforceTransparency, hasPlayerHash, isPlayerRoute } from './transparencyBridge';
 
 let bridgeHost: HTMLDivElement | null = null;
 let bridgeVideo: HTMLVideoElement | null = null;
@@ -117,10 +117,13 @@ export function mountBridgeHost(): void {
     const playerContainer = document.querySelector<HTMLElement>(
         '[class*="player-container"], [class*="video-container-v9_vA"]'
     );
-    const targetParent = playerContainer || document.body;
+    const targetParent =
+        playerContainer && playerContainer !== bridgeVideo && !bridgeHost.contains(playerContainer)
+            ? playerContainer
+            : document.body;
     if (targetParent && bridgeHost.parentElement !== targetParent) {
         targetParent.appendChild(bridgeHost);
-        console.log(`[Enhanced] Mounted bridge video host to ${playerContainer ? 'player-container' : 'document.body'}`);
+        console.log(`[Enhanced] Mounted bridge video host to ${targetParent === playerContainer ? 'player-container' : 'document.body'}`);
     }
 }
 
@@ -172,8 +175,12 @@ export function setupVideoBridge(): HTMLVideoElement {
         Document.prototype.querySelector = function <E extends Element = Element>(selectors: string): E | null {
             const result = origDocQS.call(this, selectors);
             if (!result && bridgeVideo && typeof selectors === 'string') {
-                if (selectors === 'video' || selectors.endsWith(' video') || (selectors.includes('player-container') && selectors.includes('video'))) {
-                    if (origDocQS.call(document, '[class*="player-container"]') || window.location.hash.includes('player')) {
+                const asksForVideoTag =
+                    selectors === 'video' ||
+                    selectors.endsWith(' video') ||
+                    (selectors.includes('player-container') && /(?:^|[\s>+~])video(?=$|[\s.#[:>+~,])/i.test(selectors));
+                if (asksForVideoTag) {
+                    if (origDocQS.call(document, '[class*="player-container"], [class*="video-container-v9_vA"]') || hasPlayerHash()) {
                         return bridgeVideo as unknown as E;
                     }
                 }

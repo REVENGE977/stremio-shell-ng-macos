@@ -43,6 +43,15 @@ export function isThumbnailPreviewEnabled(): boolean {
     return previewEnabled;
 }
 
+export function setThumbnailPreviewEnabledLocal(enabled: boolean): void {
+    previewEnabled = enabled;
+    if (!previewEnabled) {
+        hidePreview();
+        thumbCache.clear();
+    }
+    syncThumbnailPreviewToggle();
+}
+
 export function updateThumbnailPreviewData(data: EnhancedData): void {
     if (typeof data.thumbnailPreview === 'boolean') {
         previewEnabled = data.thumbnailPreview;

@@ -218,7 +218,6 @@
         /* Native Player Transparency Bridge */
         html:has([class*="player-container"]):not(#__shell_guard_root):not(#__shell_guard_body),
         html:has([class*="video-container-v9_vA"]):not(#__shell_guard_root):not(#__shell_guard_body),
-        html:has(#stremio-shell-bridge-video):not(#__shell_guard_root):not(#__shell_guard_body),
         body:has([class*="player-container"]):not(#__shell_guard_root):not(#__shell_guard_body),
         body:has([class*="video-container-v9_vA"]):not(#__shell_guard_root):not(#__shell_guard_body),
         html:has([class*="player-container"]) body,
@@ -2995,10 +2994,10 @@ Please place server.js in the folder or start Stremio Service. Would you like to
     const playerContainer = document.querySelector(
       '[class*="player-container"], [class*="video-container-v9_vA"]'
     );
-    const targetParent = playerContainer || document.body;
+    const targetParent = playerContainer && playerContainer !== bridgeVideo && !bridgeHost.contains(playerContainer) ? playerContainer : document.body;
     if (targetParent && bridgeHost.parentElement !== targetParent) {
       targetParent.appendChild(bridgeHost);
-      console.log(`[Enhanced] Mounted bridge video host to ${playerContainer ? "player-container" : "document.body"}`);
+      console.log(`[Enhanced] Mounted bridge video host to ${targetParent === playerContainer ? "player-container" : "document.body"}`);
     }
   }
   function ensureBridgeVideo() {
@@ -3043,8 +3042,9 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       Document.prototype.querySelector = function(selectors) {
         const result = origDocQS.call(this, selectors);
         if (!result && bridgeVideo && typeof selectors === "string") {
-          if (selectors === "video" || selectors.endsWith(" video") || selectors.includes("player-container") && selectors.includes("video")) {
-            if (origDocQS.call(document, '[class*="player-container"]') || window.location.hash.includes("player")) {
+          const asksForVideoTag = selectors === "video" || selectors.endsWith(" video") || selectors.includes("player-container") && /(?:^|[\s>+~])video(?=$|[\s.#[:>+~,])/i.test(selectors);
+          if (asksForVideoTag) {
+            if (origDocQS.call(document, '[class*="player-container"], [class*="video-container-v9_vA"]') || hasPlayerHash()) {
               return bridgeVideo;
             }
           }
@@ -3475,6 +3475,14 @@ Please place server.js in the folder or start Stremio Service. Would you like to
   var lastDisplayFrameSize = null;
   function isThumbnailPreviewEnabled() {
     return previewEnabled;
+  }
+  function setThumbnailPreviewEnabledLocal(enabled) {
+    previewEnabled = enabled;
+    if (!previewEnabled) {
+      hidePreview();
+      thumbCache.clear();
+    }
+    syncThumbnailPreviewToggle();
   }
   function updateThumbnailPreviewData(data) {
     if (typeof data.thumbnailPreview === "boolean") {
@@ -4016,8 +4024,7 @@ Please place server.js in the folder or start Stremio Service. Would you like to
       thumbToggle.appendChild(thumbKnob);
       const onToggleThumbPreview = () => {
         const next = !isThumbnailPreviewEnabled();
-        thumbToggle.classList.toggle("checked", next);
-        thumbToggle.setAttribute("aria-checked", next ? "true" : "false");
+        setThumbnailPreviewEnabledLocal(next);
         postEnhancedMessage("setThumbnailPreview", { enabled: next });
       };
       thumbToggle.addEventListener("click", onToggleThumbPreview);

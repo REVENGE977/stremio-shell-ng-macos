@@ -58,7 +58,6 @@ export function injectFallbackStyles(): void {
         /* Native Player Transparency Bridge */
         html:has([class*="player-container"]):not(#__shell_guard_root):not(#__shell_guard_body),
         html:has([class*="video-container-v9_vA"]):not(#__shell_guard_root):not(#__shell_guard_body),
-        html:has(#stremio-shell-bridge-video):not(#__shell_guard_root):not(#__shell_guard_body),
         body:has([class*="player-container"]):not(#__shell_guard_root):not(#__shell_guard_body),
         body:has([class*="video-container-v9_vA"]):not(#__shell_guard_root):not(#__shell_guard_body),
         html:has([class*="player-container"]) body,
