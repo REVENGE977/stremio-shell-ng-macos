@@ -17,8 +17,8 @@ use wry::{DragDropEvent, WebView, WebViewBuilder};
 
 use crate::stremio_app::{
     constants::{
-        web_endpoint_with_streaming_server, APP_NAME, DEV_ENDPOINT, SERVER_IPC_KEY, STA_ENDPOINT,
-        WEB_ENDPOINT, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH,
+        safe_url, web_endpoint_with_streaming_server, APP_NAME, DEV_ENDPOINT, SERVER_IPC_KEY,
+        STA_ENDPOINT, WEB_ENDPOINT, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH,
     },
     discord::DiscordRpc,
     enhanced::{EnhancedManager, ENHANCED_SCRIPT},
@@ -136,6 +136,27 @@ fn build_init_script(
                     webChannelTransport: {{
                         send: postToNative
                     }}
+                }};
+
+                // WKWebView in wry 0.47 does not implement WKUIDelegate's
+                // createWebViewWithConfiguration, so window.open(..., '_blank')
+                // (used by Stremio Web's openExternal / Facebook & Apple login)
+                // is silently dropped unless intercepted here.
+                const originalWindowOpen = window.open;
+                window.open = function(url, target, features) {{
+                    if (url != null) {{
+                        try {{
+                            const rawUrl = String(url);
+                            if (rawUrl.length > 0 && rawUrl !== 'about:blank') {{
+                                const resolved = new URL(rawUrl, window.location.href).href;
+                                if (resolved.startsWith('https://') || resolved.startsWith('http://')) {{
+                                    postToNative(JSON.stringify({{ id: 1, args: ['open-external', resolved] }}));
+                                    return null;
+                                }}
+                            }}
+                        }} catch(e) {{}}
+                    }}
+                    return originalWindowOpen ? originalWindowOpen.apply(window, arguments) : null;
                 }};
 
                 document.addEventListener('click', function(event) {{
@@ -428,7 +449,11 @@ pub fn run_macos(
         .with_initialization_script(&init_script)
         .with_new_window_req_handler(|url| {
             if url.starts_with("https://") || url.starts_with("http://") {
-                let _ = open::that(&url);
+                if let Some(final_url) = safe_url(&url) {
+                    if let Err(e) = open::that(&final_url) {
+                        eprintln!("[macOS Shell] Failed to open external URL {final_url}: {e}");
+                    }
+                }
             }
             false
         })

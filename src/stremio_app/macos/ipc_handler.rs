@@ -321,7 +321,9 @@ fn handle_rpc_request(msg: RPCRequest, ctx: &IpcContext) {
                 .and_then(|v| v.as_str())
                 .and_then(crate::stremio_app::constants::safe_url)
             {
-                open::that(url).ok();
+                if let Err(e) = open::that(&url) {
+                    eprintln!("[macOS Shell] Failed to open external URL {url}: {e}");
+                }
             }
         }
         Some("play-external") => {

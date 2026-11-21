@@ -56,10 +56,13 @@ pub fn safe_url(uri: &str) -> Option<String> {
             return None;
         }
         println!("URL is {url}");
-        let is_whitelisted = url.host().is_some_and(|host| {
-            WHITELISTED_HOSTS
-                .iter()
-                .any(|whitelisted_host| host.to_string() == *whitelisted_host)
+        let is_whitelisted = url.host_str().is_some_and(|host| {
+            WHITELISTED_HOSTS.iter().any(|whitelisted_host| {
+                host == *whitelisted_host
+                    || host
+                        .strip_suffix(whitelisted_host)
+                        .is_some_and(|prefix| prefix.ends_with('.'))
+            })
         });
 
         let final_url = if is_whitelisted {
@@ -92,6 +95,22 @@ mod tests {
         assert_eq!(
             web_endpoint_with_streaming_server("http://127.0.0.1:11470/"),
             "http://127.0.0.1:11470/proxy/d=https%3A%2F%2Fweb.stremio.com/#/"
+        );
+    }
+
+    #[test]
+    fn whitelisted_subdomains_open_without_warning() {
+        assert_eq!(
+            safe_url("https://www.strem.io/login-fb/test-state"),
+            Some("https://www.strem.io/login-fb/test-state".to_string())
+        );
+        assert_eq!(
+            safe_url("https://evil-strem.io/login-fb/test-state"),
+            Some(format!(
+                "{}{}",
+                WARNING_URL,
+                urlencoding::encode("https://evil-strem.io/login-fb/test-state")
+            ))
         );
     }
 }
